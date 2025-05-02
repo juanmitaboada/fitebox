@@ -45,14 +45,14 @@ FFPLAY="ffplay -f v4l2 -video_size 1280x720 -input_format yuyv422 -framerate 30 
 case $ACTION in
     bring)
         # Backup existing one
-        cp ${SCENE_TEMPLATE} ${SCENE_TEMPLATE}.bak.$(date +"%Y%m%d%H%M%S")
+        cp "${SCENE_TEMPLATE}" "${SCENE_TEMPLATE}.bak.$(date +"%Y%m%d%H%M%S")"
         # Create template from existing one
         jq '
   (.sources[] | select(.name == "Speaker") .settings.device_id) = "<SPEAKER>" |
   (.sources[] | select(.name == "Computer") .settings.device_id) = "<COMPUTER>" |
   (.sources[] | select(.name == "Info") .settings.text_file) = "<INFO>" |
   (.sources[] | select(.name == "Background") .settings.file) = "<BACKGROUND>"
-' ${SCENE_PATH} > ${SCENE_TEMPLATE}
+' "${SCENE_PATH}" > "${SCENE_TEMPLATE}"
         ;;
     list)
         # Debug output
@@ -73,7 +73,7 @@ case $ACTION in
   (.sources[] | select(.name == \"Computer\") .settings.device_id) = \"${COMPUTER_DEV}\" |
   (.sources[] | select(.name == \"Info\") .settings.text_file) = \"${INFO_FILE}\" |
   (.sources[] | select(.name == \"Background\") .settings.file) = \"${BACKGROUND_FILE}\"
-" ${SCENE_TEMPLATE} > ${SCENE_PATH}
+" "${SCENE_TEMPLATE}" > "${SCENE_PATH}"
         # cat ${SCENE_TEMPLATE}  | awk "{gsub(/<COMPUTER_DEV>/, \"${COMPUTER_DEV}\"); gsub(/<SPEAKER_DEV>/, \"${SPEAKER_DEV}\"); print}" > ${SCENE_PATH}
         # Open OBS Studio
         env LIBGL_ALWAYS_SOFTWARE=true obs
@@ -85,7 +85,7 @@ case $ACTION in
   (.sources[] | select(.name == \"Computer\") .settings.device_id) = \"${COMPUTER_DEV}\" |
   (.sources[] | select(.name == \"Info\") .settings.text_file) = \"${INFO_FILE}\" |
   (.sources[] | select(.name == \"Background\") .settings.file) = \"${BACKGROUND_FILE}\"
-" ${SCENE_TEMPLATE} > ${SCENE_PATH}
+" "${SCENE_TEMPLATE}" > "${SCENE_PATH}"
         # cat ${SCENE_TEMPLATE}  | awk "{gsub(/<COMPUTER_DEV>/, \"${COMPUTER_DEV}\"); gsub(/<SPEAKER_DEV>/, \"${SPEAKER_DEV}\"); print}" > ${SCENE_PATH}
         # Run OSB Studio
         xvfb-run obs \
@@ -97,9 +97,9 @@ case $ACTION in
           --no-splash
         ;;
     image)
-        LAST_VIDEO=$(/bin/ls -1atr ${MKV_PATH}/*mkv | tail -n 1)
+        LAST_VIDEO=$(/bin/ls -1atr "${MKV_PATH}/*mkv" | tail -n 1)
         echo "Last video: ${LAST_VIDEO}"
-        for i in 1 2 3; do
+        for _ in 1 2 3; do
             if [[ -e ${LAST_FRAME} ]] ; then
                 rm ${LAST_FRAME}
             fi
@@ -112,11 +112,11 @@ case $ACTION in
         ;;
     imagefollow)
         LAST_PID=""
-        while [[ 1 ]] ; do
+        while true ; do
             eom -f "${LAST_FRAME}" &
             ACTUAL_PID=$!
             if [[ -n "${LAST_PID}" ]] ; then
-                kill ${LAST_PID}
+                kill "${LAST_PID}"
             fi
             sleep 1
             LAST_PID="$ACTUAL_PID"
@@ -132,12 +132,12 @@ case $ACTION in
         # ffmpeg -sseof -1 -i "${LAST_VIDEO}" -vframes 1 -f image2pipe -vcodec ppm - 2>/dev/null | ffplay -autoexit -f image2pipe -vcodec ppm -
         LASTPID=""
         while true; do
-            LAST_VIDEO=$(/bin/ls -1atr ${MKV_PATH}/*mkv | tail -n 1)
+            LAST_VIDEO=$(/bin/ls -1atr "${MKV_PATH}/*mkv" | tail -n 1)
             echo "Last video: ${LAST_VIDEO}"
             ffmpeg -sseof -1 -i "${LAST_VIDEO}" -vframes 1 -f image2pipe -vcodec ppm - 2>/dev/null | ffplay -autoexit -f image2pipe -vcodec ppm - &
             ACTUAL_PID="$!"
             if [[ -n "$LASTPID" ]] ; then
-                kill $LASTPID
+                kill "$LASTPID"
             fi
             sleep 10
             LASTPID="$ACTUAL_PID"
