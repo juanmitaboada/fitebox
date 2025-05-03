@@ -1,0 +1,485 @@
+{
+  "AuxAudioDevice1": {
+    "balance": 0.5,
+    "deinterlace_field_order": 0,
+    "deinterlace_mode": 0,
+    "enabled": true,
+    "flags": 0,
+    "hotkeys": {
+      "libobs.mute": [],
+      "libobs.push-to-mute": [],
+      "libobs.push-to-talk": [],
+      "libobs.unmute": []
+    },
+    "id": "pulse_input_capture",
+    "mixers": 255,
+    "monitoring_type": 0,
+    "muted": false,
+    "name": "Mic/Aux",
+    "prev_ver": 486539266,
+    "private_settings": {},
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    "settings": {
+      "device_id": "default"
+    },
+    "sync": 0,
+    "versioned_id": "pulse_input_capture",
+    "volume": 1
+  },
+  "AuxAudioDevice2": {
+    "balance": 0.5,
+    "deinterlace_field_order": 0,
+    "deinterlace_mode": 0,
+    "enabled": true,
+    "flags": 0,
+    "hotkeys": {
+      "libobs.mute": [],
+      "libobs.push-to-mute": [],
+      "libobs.push-to-talk": [],
+      "libobs.unmute": []
+    },
+    "id": "pulse_input_capture",
+    "mixers": 255,
+    "monitoring_type": 0,
+    "muted": false,
+    "name": "Mic/Aux 2",
+    "prev_ver": 486539266,
+    "private_settings": {},
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    "settings": {
+      "device_id": "alsa_input.usb-MACROSILICON_Hagibis_43629572-02.analog-stereo"
+    },
+    "sync": 0,
+    "versioned_id": "pulse_input_capture",
+    "volume": 1
+  },
+  "AuxAudioDevice3": {
+    "balance": 0.5,
+    "deinterlace_field_order": 0,
+    "deinterlace_mode": 0,
+    "enabled": true,
+    "flags": 0,
+    "hotkeys": {
+      "libobs.mute": [],
+      "libobs.push-to-mute": [],
+      "libobs.push-to-talk": [],
+      "libobs.unmute": []
+    },
+    "id": "pulse_input_capture",
+    "mixers": 255,
+    "monitoring_type": 0,
+    "muted": false,
+    "name": "Mic/Aux 3",
+    "prev_ver": 486539266,
+    "private_settings": {},
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    "settings": {
+      "device_id": "alsa_input.usb-Linux_Foundation_Angetube_Live_Camera-02.analog-stereo"
+    },
+    "sync": 0,
+    "versioned_id": "pulse_input_capture",
+    "volume": 1
+  },
+  "DesktopAudioDevice1": {
+    "balance": 0.5,
+    "deinterlace_field_order": 0,
+    "deinterlace_mode": 0,
+    "enabled": true,
+    "flags": 0,
+    "hotkeys": {
+      "libobs.mute": [],
+      "libobs.push-to-mute": [],
+      "libobs.push-to-talk": [],
+      "libobs.unmute": []
+    },
+    "id": "pulse_output_capture",
+    "mixers": 255,
+    "monitoring_type": 0,
+    "muted": false,
+    "name": "Desktop Audio",
+    "prev_ver": 486539266,
+    "private_settings": {},
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    "settings": {
+      "device_id": "default"
+    },
+    "sync": 0,
+    "versioned_id": "pulse_output_capture",
+    "volume": 1
+  },
+  "current_program_scene": "Scene",
+  "current_scene": "Scene",
+  "current_transition": "Fade",
+  "groups": [],
+  "modules": {
+    "auto-scene-switcher": {
+      "active": false,
+      "interval": 300,
+      "non_matching_scene": "",
+      "switch_if_not_matching": false,
+      "switches": []
+    },
+    "output-timer": {
+      "autoStartRecordTimer": false,
+      "autoStartStreamTimer": false,
+      "pauseRecordTimer": true,
+      "recordTimerHours": 0,
+      "recordTimerMinutes": 0,
+      "recordTimerSeconds": 30,
+      "streamTimerHours": 0,
+      "streamTimerMinutes": 0,
+      "streamTimerSeconds": 30
+    },
+    "scripts-tool": []
+  },
+  "name": "OSC",
+  "preview_locked": false,
+  "quick_transitions": [
+    {
+      "duration": 300,
+      "fade_to_black": false,
+      "hotkeys": [],
+      "id": 1,
+      "name": "Cut"
+    },
+    {
+      "duration": 300,
+      "fade_to_black": false,
+      "hotkeys": [],
+      "id": 2,
+      "name": "Fade"
+    },
+    {
+      "duration": 300,
+      "fade_to_black": true,
+      "hotkeys": [],
+      "id": 3,
+      "name": "Fade"
+    }
+  ],
+  "saved_projectors": [],
+  "scaling_enabled": false,
+  "scaling_level": 0,
+  "scaling_off_x": 0,
+  "scaling_off_y": 0,
+  "scene_order": [
+    {
+      "name": "Scene"
+    }
+  ],
+  "sources": [
+    {
+      "balance": 0.5,
+      "deinterlace_field_order": 0,
+      "deinterlace_mode": 0,
+      "enabled": true,
+      "flags": 0,
+      "hotkeys": {},
+      "id": "text_ft2_source",
+      "mixers": 0,
+      "monitoring_type": 0,
+      "muted": false,
+      "name": "Info",
+      "prev_ver": 486539266,
+      "private_settings": {},
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "settings": {
+        "color1": 4278190080,
+        "color2": 4278190080,
+        "from_file": true,
+        "outline": true,
+        "text_file": "<INFO>"
+      },
+      "sync": 0,
+      "versioned_id": "text_ft2_source_v2",
+      "volume": 1
+    },
+    {
+      "balance": 0.5,
+      "deinterlace_field_order": 0,
+      "deinterlace_mode": 0,
+      "enabled": true,
+      "flags": 0,
+      "hotkeys": {},
+      "id": "v4l2_input",
+      "mixers": 0,
+      "monitoring_type": 0,
+      "muted": false,
+      "name": "Speaker",
+      "prev_ver": 486539266,
+      "private_settings": {},
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "settings": {
+        "device_id": "<SPEAKER>",
+        "pixelformat": 842093913
+      },
+      "sync": 0,
+      "versioned_id": "v4l2_input",
+      "volume": 1
+    },
+    {
+      "balance": 0.5,
+      "deinterlace_field_order": 0,
+      "deinterlace_mode": 0,
+      "enabled": true,
+      "flags": 0,
+      "hotkeys": {},
+      "id": "image_source",
+      "mixers": 0,
+      "monitoring_type": 0,
+      "muted": false,
+      "name": "Background",
+      "prev_ver": 486539266,
+      "private_settings": {},
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "settings": {
+        "file": "<BACKGROUND>"
+      },
+      "sync": 0,
+      "versioned_id": "image_source",
+      "volume": 1
+    },
+    {
+      "balance": 0.5,
+      "deinterlace_field_order": 0,
+      "deinterlace_mode": 0,
+      "enabled": true,
+      "flags": 0,
+      "hotkeys": {
+        "OBSBasic.SelectScene": [],
+        "libobs.hide_scene_item.Background": [],
+        "libobs.hide_scene_item.Computer": [],
+        "libobs.hide_scene_item.Info": [],
+        "libobs.hide_scene_item.Speaker": [],
+        "libobs.show_scene_item.Background": [],
+        "libobs.show_scene_item.Computer": [],
+        "libobs.show_scene_item.Info": [],
+        "libobs.show_scene_item.Speaker": []
+      },
+      "id": "scene",
+      "mixers": 0,
+      "monitoring_type": 0,
+      "muted": false,
+      "name": "Scene",
+      "prev_ver": 486539266,
+      "private_settings": {},
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "settings": {
+        "custom_size": false,
+        "id_counter": 11,
+        "items": [
+          {
+            "align": 5,
+            "blend_method": "default",
+            "blend_type": "normal",
+            "bounds": {
+              "x": 0,
+              "y": 0
+            },
+            "bounds_align": 0,
+            "bounds_type": 0,
+            "crop_bottom": 0,
+            "crop_left": 0,
+            "crop_right": 0,
+            "crop_top": 0,
+            "group_item_backup": false,
+            "hide_transition": {
+              "duration": 0
+            },
+            "id": 4,
+            "locked": false,
+            "name": "Background",
+            "pos": {
+              "x": 0,
+              "y": 0
+            },
+            "private_settings": {},
+            "rot": 0,
+            "scale": {
+              "x": 0.1599999964237213,
+              "y": 0.159964457154274
+            },
+            "scale_filter": "disable",
+            "show_transition": {
+              "duration": 0
+            },
+            "visible": true
+          },
+          {
+            "align": 5,
+            "blend_method": "default",
+            "blend_type": "normal",
+            "bounds": {
+              "x": 0,
+              "y": 0
+            },
+            "bounds_align": 0,
+            "bounds_type": 0,
+            "crop_bottom": 0,
+            "crop_left": 0,
+            "crop_right": 0,
+            "crop_top": 0,
+            "group_item_backup": false,
+            "hide_transition": {
+              "duration": 0
+            },
+            "id": 9,
+            "locked": false,
+            "name": "Computer",
+            "pos": {
+              "x": 266,
+              "y": 36
+            },
+            "private_settings": {},
+            "rot": 0,
+            "scale": {
+              "x": 0.5177083611488342,
+              "y": 0.5175926089286804
+            },
+            "scale_filter": "disable",
+            "show_transition": {
+              "duration": 0
+            },
+            "visible": true
+          },
+          {
+            "align": 5,
+            "blend_method": "default",
+            "blend_type": "normal",
+            "bounds": {
+              "x": 0,
+              "y": 0
+            },
+            "bounds_align": 0,
+            "bounds_type": 0,
+            "crop_bottom": 0,
+            "crop_left": 0,
+            "crop_right": 0,
+            "crop_top": 0,
+            "group_item_backup": false,
+            "hide_transition": {
+              "duration": 0
+            },
+            "id": 10,
+            "locked": false,
+            "name": "Speaker",
+            "pos": {
+              "x": 9,
+              "y": 248
+            },
+            "private_settings": {},
+            "rot": 0,
+            "scale": {
+              "x": 0.2451171875,
+              "y": 0.2447916716337204
+            },
+            "scale_filter": "disable",
+            "show_transition": {
+              "duration": 0
+            },
+            "visible": true
+          },
+          {
+            "align": 5,
+            "blend_method": "default",
+            "blend_type": "normal",
+            "bounds": {
+              "x": 0,
+              "y": 0
+            },
+            "bounds_align": 0,
+            "bounds_type": 0,
+            "crop_bottom": 0,
+            "crop_left": 0,
+            "crop_right": 0,
+            "crop_top": 0,
+            "group_item_backup": false,
+            "hide_transition": {
+              "duration": 0
+            },
+            "id": 11,
+            "locked": false,
+            "name": "Info",
+            "pos": {
+              "x": 565,
+              "y": 622
+            },
+            "private_settings": {},
+            "rot": 0,
+            "scale": {
+              "x": 0.10841751098632812,
+              "y": 0.10820244252681732
+            },
+            "scale_filter": "disable",
+            "show_transition": {
+              "duration": 0
+            },
+            "visible": true
+          }
+        ]
+      },
+      "sync": 0,
+      "versioned_id": "scene",
+      "volume": 1
+    },
+    {
+      "balance": 0.5,
+      "deinterlace_field_order": 0,
+      "deinterlace_mode": 0,
+      "enabled": true,
+      "flags": 0,
+      "hotkeys": {},
+      "id": "v4l2_input",
+      "mixers": 0,
+      "monitoring_type": 0,
+      "muted": false,
+      "name": "Computer",
+      "prev_ver": 486539266,
+      "private_settings": {},
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "settings": {
+        "device_id": "<COMPUTER>",
+        "input": 0,
+        "pixelformat": 842093913
+      },
+      "sync": 0,
+      "versioned_id": "v4l2_input",
+      "volume": 1
+    }
+  ],
+  "transition_duration": 300,
+  "transitions": [],
+  "virtual-camera": {
+    "internal": 0,
+    "scene": "",
+    "source": "",
+    "type": 0
+  }
+}
