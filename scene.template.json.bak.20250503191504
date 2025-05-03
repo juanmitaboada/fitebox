@@ -14,7 +14,7 @@
     "id": "pulse_input_capture",
     "mixers": 255,
     "monitoring_type": 0,
-    "muted": true,
+    "muted": false,
     "name": "Mic/Aux",
     "prev_ver": 486539266,
     "private_settings": {},
@@ -104,7 +104,7 @@
     "id": "pulse_output_capture",
     "mixers": 255,
     "monitoring_type": 0,
-    "muted": true,
+    "muted": false,
     "name": "Desktop Audio",
     "prev_ver": 486539266,
     "private_settings": {},
@@ -351,14 +351,14 @@
             "locked": false,
             "name": "Computer",
             "pos": {
-              "x": 13,
-              "y": 290
+              "x": 266,
+              "y": 36
             },
             "private_settings": {},
             "rot": 0,
             "scale": {
-              "x": 0.2275390625,
-              "y": 0.2274305522441864
+              "x": 0.5177083611488342,
+              "y": 0.5175926089286804
             },
             "scale_filter": "disable",
             "show_transition": {
@@ -388,14 +388,14 @@
             "locked": false,
             "name": "Speaker",
             "pos": {
-              "x": 256,
-              "y": 28
+              "x": 9,
+              "y": 248
             },
             "private_settings": {},
             "rot": 0,
             "scale": {
-              "x": 0.5260416865348816,
-              "y": 0.5259259343147278
+              "x": 0.2451171875,
+              "y": 0.2447916716337204
             },
             "scale_filter": "disable",
             "show_transition": {
