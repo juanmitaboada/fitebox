@@ -43,6 +43,12 @@ FFPLAY="ffplay -f v4l2 -video_size 1280x720 -input_format yuyv422 -framerate 30 
 
 # Execute actions
 case $ACTION in
+    list)
+        # Debug output
+        v4l2-ctl --list-devices
+        echo "Speaker : $SPEAKER_DEV"
+        echo "Computer: $COMPUTER_DEV"
+        ;;
     bring)
         # Backup existing one
         cp "${SCENE_TEMPLATE}" "${SCENE_TEMPLATE}.bak.$(date +"%Y%m%d%H%M%S")"
@@ -54,11 +60,14 @@ case $ACTION in
   (.sources[] | select(.name == "Background") .settings.file) = "<BACKGROUND>"
 ' "${SCENE_PATH}" > "${SCENE_TEMPLATE}"
         ;;
-    list)
-        # Debug output
-        v4l2-ctl --list-devices
-        echo "Speaker : $SPEAKER_DEV"
-        echo "Computer: $COMPUTER_DEV"
+    send)
+        # Create updated scene
+        jq "
+  (.sources[] | select(.name == \"Speaker\") .settings.device_id) = \"${SPEAKER_DEV}\" |
+  (.sources[] | select(.name == \"Computer\") .settings.device_id) = \"${COMPUTER_DEV}\" |
+  (.sources[] | select(.name == \"Info\") .settings.text_file) = \"${INFO_FILE}\" |
+  (.sources[] | select(.name == \"Background\") .settings.file) = \"${BACKGROUND_FILE}\"
+" "${SCENE_TEMPLATE}" > "${SCENE_PATH}"
         ;;
     test)
         # Test Angetube
@@ -87,8 +96,13 @@ case $ACTION in
   (.sources[] | select(.name == \"Background\") .settings.file) = \"${BACKGROUND_FILE}\"
 " "${SCENE_TEMPLATE}" > "${SCENE_PATH}"
         # cat ${SCENE_TEMPLATE}  | awk "{gsub(/<COMPUTER_DEV>/, \"${COMPUTER_DEV}\"); gsub(/<SPEAKER_DEV>/, \"${SPEAKER_DEV}\"); print}" > ${SCENE_PATH}
-        # Run OSB Studio
-        xvfb-run obs \
+        # Decide environment
+        if [[ -z "$DISPLAY" ]] then
+            PREFIX="xvfb-run"
+        else
+            PREFIX="env LIBGL_ALWAYS_SOFTWARE=true"
+        fi
+        $PREFIX obs \
           --startrecording \
           --scene "$SCENE_NAME" \
           --collection "$COLLECTION_NAME" \
