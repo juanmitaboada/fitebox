@@ -14,7 +14,7 @@
     "id": "pulse_input_capture",
     "mixers": 255,
     "monitoring_type": 0,
-    "muted": false,
+    "muted": true,
     "name": "Mic/Aux",
     "prev_ver": 486539266,
     "private_settings": {},
@@ -23,7 +23,7 @@
     "push-to-talk": false,
     "push-to-talk-delay": 0,
     "settings": {
-      "device_id": "alsa_input.usb-Linux_Foundation_Angetube_Live_Camera-02.analog-stereo"
+      "device_id": "default"
     },
     "sync": 0,
     "versioned_id": "pulse_input_capture",
@@ -57,6 +57,66 @@
     },
     "sync": 0,
     "versioned_id": "pulse_input_capture",
+    "volume": 1
+  },
+  "AuxAudioDevice3": {
+    "balance": 0.5,
+    "deinterlace_field_order": 0,
+    "deinterlace_mode": 0,
+    "enabled": true,
+    "flags": 0,
+    "hotkeys": {
+      "libobs.mute": [],
+      "libobs.push-to-mute": [],
+      "libobs.push-to-talk": [],
+      "libobs.unmute": []
+    },
+    "id": "pulse_input_capture",
+    "mixers": 255,
+    "monitoring_type": 0,
+    "muted": false,
+    "name": "Mic/Aux 3",
+    "prev_ver": 486539266,
+    "private_settings": {},
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    "settings": {
+      "device_id": "alsa_input.usb-Linux_Foundation_Angetube_Live_Camera-02.analog-stereo"
+    },
+    "sync": 0,
+    "versioned_id": "pulse_input_capture",
+    "volume": 1
+  },
+  "DesktopAudioDevice1": {
+    "balance": 0.5,
+    "deinterlace_field_order": 0,
+    "deinterlace_mode": 0,
+    "enabled": true,
+    "flags": 0,
+    "hotkeys": {
+      "libobs.mute": [],
+      "libobs.push-to-mute": [],
+      "libobs.push-to-talk": [],
+      "libobs.unmute": []
+    },
+    "id": "pulse_output_capture",
+    "mixers": 255,
+    "monitoring_type": 0,
+    "muted": true,
+    "name": "Desktop Audio",
+    "prev_ver": 486539266,
+    "private_settings": {},
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    "settings": {
+      "device_id": "default"
+    },
+    "sync": 0,
+    "versioned_id": "pulse_output_capture",
     "volume": 1
   },
   "current_program_scene": "Scene",
@@ -291,14 +351,14 @@
             "locked": false,
             "name": "Computer",
             "pos": {
-              "x": 254,
-              "y": 32
+              "x": 13,
+              "y": 290
             },
             "private_settings": {},
             "rot": 0,
             "scale": {
-              "x": 0.5286458134651184,
-              "y": 0.5287036895751953
+              "x": 0.2275390625,
+              "y": 0.2274305522441864
             },
             "scale_filter": "disable",
             "show_transition": {
@@ -328,14 +388,14 @@
             "locked": false,
             "name": "Speaker",
             "pos": {
-              "x": 17,
-              "y": 331
+              "x": 256,
+              "y": 28
             },
             "private_settings": {},
             "rot": 0,
             "scale": {
-              "x": 0.244140625,
-              "y": 0.2447916716337204
+              "x": 0.5260416865348816,
+              "y": 0.5259259343147278
             },
             "scale_filter": "disable",
             "show_transition": {
