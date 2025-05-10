@@ -43,6 +43,24 @@ FFPLAY="ffplay -f v4l2 -video_size 1280x720 -input_format yuyv422 -framerate 30 
 
 # Execute actions
 case $ACTION in
+    smile)
+        echo "Smile 😁 !!!"
+        target="${HOME}/$(date +"%Y-%m-%d %H-%M-%S").mp4"
+        ffmpeg \
+          -f v4l2 \
+          -input_format h264 \
+          -video_size 1920x1080 \
+          -framerate 30 \
+          -i ${SPEAKER_DEV} \
+          -f pulse \
+          -i alsa_input.usb-Linux_Foundation_Angetube_Live_Camera-02.analog-stereo \
+          -t 10 \
+          -map 0:v:0 -map 1:a:0 \
+          -c:v copy \
+          -c:a aac -b:a 128k \
+          "${target}"
+        echo "Done 👍"
+        ;;
     list)
         # Debug output
         v4l2-ctl --list-devices
