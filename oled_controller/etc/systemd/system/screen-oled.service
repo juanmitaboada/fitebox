@@ -1,0 +1,11 @@
+[Unit]
+Description=OLED screen service
+
+[Service]
+User=REPLACE_WITH_YOUR_USER
+Group=REPLACE_WITH_YOUR_GROUP
+ExecStart=/home/REPLACE_WITH_YOUR_USER/oled_controller/.venv/bin/python /home/osc/oled_controller/oled_controller.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
