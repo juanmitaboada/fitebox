@@ -5,7 +5,7 @@ import RPi.GPIO as GPIO  # type: ignore[import] # noqa: N814
 import subprocess
 
 # Configuration
-light_standby = (0.1, 1)
+light_standby = (0.05, 1)
 light_ready = (0.5, 0.5)
 light_steady = (0.2, 0.1)
 light_warmup = (0.05, 0.05)
@@ -13,9 +13,11 @@ light_go = (100, 0)
 light_on = (100, 0)
 ready_time = 5
 steady_time = 2
-warmup_time = 3
+warmup_time = 1
 capture_time = 10
-capture_command = ["./fitebox.sh","smile"]
+goaway_time = 1
+recording_time = warmup_time + capture_time + goaway_time
+capture_command = ["./fitebox.sh","smile", str(recording_time)]
 
 # Light pin
 LIGHT = 23
@@ -27,7 +29,8 @@ STATUS_PREPARE = 2
 STATUS_READY = 3
 STATUS_STEADY = 4
 STATUS_WARMUP = 5
-STATUS_GO = 6
+STATUS_CAPTURE = 6
+STATUS_GOAWAY = 7
 
 # Use BCM numbering
 GPIO.setmode(GPIO.BCM)
@@ -97,7 +100,7 @@ try:
         now = time.monotonic()
 
         # Read the switch (True when not pressed, False when pressed)
-        if status == STATUS_WARMUP or status == STATUS_GO:
+        if status == STATUS_WARMUP or status == STATUS_CAPTURE or status == STATUS_GOAWAY:
             # Don't read the switch during warmup or capture
             switch_closed = False
         else:
@@ -133,15 +136,20 @@ try:
             )
         elif status == STATUS_WARMUP and now - last_status > warmup_time:
             print("Capturing...")
-            status = STATUS_GO
+            status = STATUS_CAPTURE
             last_status = now
             light.set_profile(light_go)
-        elif status == STATUS_GO and proc and proc.poll() is not None:
-            # Wait for the process to finish
-            print(f"DONE: exit code {proc.returncode}")
-            status = STATUS_STANDBY
-            last_status = now
+        elif status == STATUS_CAPTURE and now - last_status > capture_time:
+            print("Go away...")
             light.set_profile(light_standby)
+            status = STATUS_GOAWAY
+            last_status = now
+        elif status == STATUS_GOAWAY and now - last_status > goaway_time:
+            # Wait for the process to finish
+            if proc and proc.poll() is not None:
+                print(f"DONE: exit code {proc.returncode}")
+                status = STATUS_STANDBY
+                last_status = now
 
         time.sleep(0.1)  # debounce / loop delay
         light.update()

@@ -3,6 +3,7 @@
 # Configuration
 SPEAKER_CAM="Angetube"
 COMPUTER_CAM="Hagibis"
+AUDIO_SYNC=0.5  # Delay for audio to match
 
 # General configuration
 FITEBOX_HOME="$HOME/fitebox"
@@ -20,6 +21,7 @@ BACKGROUND_FILE="${FITEBOX_HOME}/background.png"
 
 # Get arguments
 ACTION="$1"
+ARG1="$2"
 
 # Get devices with names
 DEVICE_LIST=$(v4l2-ctl --list-devices 2>/dev/null)
@@ -54,16 +56,21 @@ FFPLAY="ffplay -f v4l2 -video_size 1280x720 -input_format yuyv422 -framerate 30 
 # Execute actions
 case $ACTION in
     smile)
+        if [[ -z "$ARG1" ]] ; then
+            capture_time=10
+        else
+            capture_time="$ARG1"
+        fi
         echo "Smile 😁 !!!"
         target="${HOME}/$(date +"%Y-%m-%d %H-%M-%S").mp4"
-        ffmpeg \
-          -f v4l2 \
-          -use_wallclock_as_timestamps 1 -thread_queue_size 512 \
+        ffmpeg -fflags +genpts \
+          -f v4l2 -use_wallclock_as_timestamps 1 -thread_queue_size 512 \
           -input_format yuyv422 -video_size 1920x1080 -framerate 30 -i ${SPEAKER_DEV} \
-          -f alsa -thread_queue_size 512 -i ${SPEAKER_AUDIO} \
-          -t 10 \
+          -itsoffset ${AUDIO_SYNC} -f alsa -thread_queue_size 512 -i ${SPEAKER_AUDIO} \
+          -t ${capture_time} \
           -map 0:v:0 -map 1:a:0 \
           -c:v libx264 -preset ultrafast -tune zerolatency \
+          -af aresample=async=1:first_pts=0 \
           -c:a aac -b:a 128k \
           "${target}"
           # -c:v copy \
