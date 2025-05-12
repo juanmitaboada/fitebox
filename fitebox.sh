@@ -23,18 +23,28 @@ ACTION="$1"
 
 # Get devices with names
 DEVICE_LIST=$(v4l2-ctl --list-devices 2>/dev/null)
+AUDIO_LIST=$(arecord -l)
 
 # Extract video device for Speaker
-SPEAKER_DEV=$(echo "$DEVICE_LIST" | awk "/${SPEAKER_CAM}${DEV_ER}" | head -n1 | xargs)
+SPEAKER_DEV=$(echo "${DEVICE_LIST}" | awk "/${SPEAKER_CAM}${DEV_ER}" | head -n1 | xargs)
+SPEAKER_AUDIO=$(echo "${AUDIO_LIST}" | awk -v name="${SPEAKER_CAM}" '
+  /card [0-9]+:/ { card=$2 }
+  $0 ~ name { gsub(":", "", card); print "hw:" card ",0"; exit }
+')
 
 # Extract video device for Computer
-COMPUTER_DEV=$(echo "$DEVICE_LIST" | awk "/${COMPUTER_CAM}${DEV_ER}" | head -n1 | xargs)
+COMPUTER_DEV=$(echo "${DEVICE_LIST}" | awk "/${COMPUTER_CAM}${DEV_ER}" | head -n1 | xargs)
+COMPUTER_AUDIO=$(echo "${AUDIO_LIST}" | awk -v name="${COMPUTER_CAM}" '
+  /card [0-9]+:/ { card=$2 }
+  $0 ~ name { gsub(":", "", card); print "hw:" card ",0"; exit }
+')
+
 
 # Check if both were found
 if [[ -z "$SPEAKER_DEV" || -z "$COMPUTER_DEV" ]]; then
     v4l2-ctl --list-devices
-    echo "Speaker : $SPEAKER_DEV"
-    echo "Computer: $COMPUTER_DEV"
+    echo "Speaker : $SPEAKER_DEV - $SPEAKER_AUDIO"
+    echo "Computer: $COMPUTER_DEV - $COMPUTER_AUDIO"
     echo "Error: Could not detect both video devices."
     exit 1
 fi
@@ -48,24 +58,22 @@ case $ACTION in
         target="${HOME}/$(date +"%Y-%m-%d %H-%M-%S").mp4"
         ffmpeg \
           -f v4l2 \
-          -input_format h264 \
-          -video_size 1920x1080 \
-          -framerate 30 \
-          -i ${SPEAKER_DEV} \
-          -f pulse \
-          -i alsa_input.usb-Linux_Foundation_Angetube_Live_Camera-02.analog-stereo \
+          -use_wallclock_as_timestamps 1 -thread_queue_size 512 \
+          -input_format yuyv422 -video_size 1920x1080 -framerate 30 -i ${SPEAKER_DEV} \
+          -f alsa -thread_queue_size 512 -i ${SPEAKER_AUDIO} \
           -t 10 \
           -map 0:v:0 -map 1:a:0 \
-          -c:v copy \
+          -c:v libx264 -preset ultrafast -tune zerolatency \
           -c:a aac -b:a 128k \
           "${target}"
+          # -c:v copy \
         echo "Done 👍"
         ;;
     list)
         # Debug output
         v4l2-ctl --list-devices
-        echo "Speaker : $SPEAKER_DEV"
-        echo "Computer: $COMPUTER_DEV"
+        echo "Speaker : $SPEAKER_DEV - $SPEAKER_AUDIO"
+        echo "Computer: $COMPUTER_DEV - $COMPUTER_AUDIO"
         ;;
     bring)
         # Backup existing one

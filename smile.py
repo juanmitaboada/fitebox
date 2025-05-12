@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import time
 import RPi.GPIO as GPIO  # type: ignore[import] # noqa: N814
 import subprocess
@@ -11,8 +13,9 @@ light_go = (100, 0)
 light_on = (100, 0)
 ready_time = 5
 steady_time = 2
-warmup_time = 2
+warmup_time = 3
 capture_time = 10
+capture_command = ["./fitebox.sh","smile"]
 
 # Light pin
 LIGHT = 23
@@ -123,7 +126,7 @@ try:
             last_status = now
             light.set_profile(light_warmup)
             proc = subprocess.Popen(
-                ["sleep", str(capture_time)],
+                capture_command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,  # fully detach on Unix
