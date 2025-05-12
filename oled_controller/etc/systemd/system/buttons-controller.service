@@ -13,5 +13,3 @@ Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
-
-ExecStart=/home/osc/tmp/venv/bin/python /home/osc/tmp/buttons_controller.py
