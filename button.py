@@ -94,7 +94,7 @@ try:
         now = time.monotonic()
 
         # Read the switch (True when not pressed, False when pressed)
-        if STATUS_WARMUP or status == STATUS_GO:
+        if status == STATUS_WARMUP or status == STATUS_GO:
             # Don't read the switch during warmup or capture
             switch_closed = False
         else:
