@@ -143,19 +143,30 @@ try:
             )
         elif status == STATUS_WARMUP and now - last_status > warmup_time:
             print("Capturing...")
+
             # Reset display
             if os.path.exists(display):
                 print(f"Resetting {display}")
-                try:
-                    with serial.Serial(display) as ser:
-                        ser.setDTR(False)
-                        ser.setRTS(True)
-                        time.sleep(0.1)
-                        ser.setRTS(False)
-                        ser.setDTR(True)
-                        ser.close()
-                finally:
-                    pass
+
+                # Fork a child process to reset the display
+                pid = os.fork()
+                if pid <= 0:
+
+                    # This is the child process
+                    try:
+                        with serial.Serial(display) as ser:
+                            ser.setDTR(False)
+                            ser.setRTS(True)
+                            time.sleep(0.1)
+                            ser.setRTS(False)
+                            ser.setDTR(True)
+                            ser.close()
+                    finally:
+                        pass
+
+                    # Close the child process
+                    os._exit(0)
+
             # Set status and lights
             status = STATUS_CAPTURE
             last_status = now
