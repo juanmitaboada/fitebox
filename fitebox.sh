@@ -65,7 +65,7 @@ case $ACTION in
         target="${HOME}/$(date +"%Y-%m-%d %H-%M-%S").mp4"
         ffmpeg -fflags +genpts \
           -f v4l2 -use_wallclock_as_timestamps 1 -thread_queue_size 512 \
-          -input_format yuyv422 -video_size 1920x1080 -framerate 30 -i ${SPEAKER_DEV} \
+          -input_format yuyv422 -video_size 1920x1080 -framerate 60 -i ${SPEAKER_DEV} \
           -itsoffset ${AUDIO_SYNC} -f alsa -thread_queue_size 512 -i ${SPEAKER_AUDIO} \
           -t ${capture_time} \
           -map 0:v:0 -map 1:a:0 \

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import os
 import time
 import RPi.GPIO as GPIO  # type: ignore[import] # noqa: N814
 import subprocess
+import serial
 
 # Configuration
 light_standby = (0.05, 1)
@@ -17,7 +19,8 @@ warmup_time = 1
 capture_time = 10
 goaway_time = 1
 recording_time = warmup_time + capture_time + goaway_time
-capture_command = ["./fitebox.sh","smile", str(recording_time)]
+capture_command = ["./fitebox.sh", "smile", str(recording_time)]
+display = "/dev/ttyACM0"
 
 # Light pin
 LIGHT = 23
@@ -100,7 +103,11 @@ try:
         now = time.monotonic()
 
         # Read the switch (True when not pressed, False when pressed)
-        if status == STATUS_WARMUP or status == STATUS_CAPTURE or status == STATUS_GOAWAY:
+        if (
+            status == STATUS_WARMUP
+            or status == STATUS_CAPTURE
+            or status == STATUS_GOAWAY
+        ):
             # Don't read the switch during warmup or capture
             switch_closed = False
         else:
@@ -136,6 +143,20 @@ try:
             )
         elif status == STATUS_WARMUP and now - last_status > warmup_time:
             print("Capturing...")
+            # Reset display
+            if os.path.exists(display):
+                print(f"Resetting {display}")
+                try:
+                    with serial.Serial(display) as ser:
+                        ser.setDTR(False)
+                        ser.setRTS(True)
+                        time.sleep(0.1)
+                        ser.setRTS(False)
+                        ser.setDTR(True)
+                        ser.close()
+                finally:
+                    pass
+            # Set status and lights
             status = STATUS_CAPTURE
             last_status = now
             light.set_profile(light_go)
