@@ -65,7 +65,7 @@ case $ACTION in
         echo "Smile 😁 !!!"
         if [[ -z "$ARG2" ]] ; then
             echo "Resetting display"
-            uhubctl -s "${ARG2}" -a 2
+            sudo uhubctl -s "${ARG2}" -a 2
         fi
         target="${HOME}/$(date +"%Y-%m-%d %H-%M-%S").mp4"
         ffmpeg -fflags +genpts \
