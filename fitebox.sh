@@ -22,6 +22,7 @@ BACKGROUND_FILE="${FITEBOX_HOME}/background.png"
 # Get arguments
 ACTION="$1"
 ARG1="$2"
+ARG2="$3"
 
 # Get devices with names
 DEVICE_LIST=$(v4l2-ctl --list-devices 2>/dev/null)
@@ -62,12 +63,16 @@ case $ACTION in
             capture_time="$ARG1"
         fi
         echo "Smile 😁 !!!"
+        if [[ -z "$ARG2" ]] ; then
+            echo "Resetting display"
+            uhubctl -s "${ARG2}" -a 2
+        fi
         target="${HOME}/$(date +"%Y-%m-%d %H-%M-%S").mp4"
         ffmpeg -fflags +genpts \
           -f v4l2 -use_wallclock_as_timestamps 1 -thread_queue_size 512 \
-          -input_format yuyv422 -video_size 1920x1080 -framerate 60 -i ${SPEAKER_DEV} \
-          -itsoffset ${AUDIO_SYNC} -f alsa -thread_queue_size 512 -i ${SPEAKER_AUDIO} \
-          -t ${capture_time} \
+          -input_format yuyv422 -video_size 1920x1080 -framerate 60 -i "${SPEAKER_DEV}" \
+          -itsoffset ${AUDIO_SYNC} -f alsa -thread_queue_size 512 -i "${SPEAKER_AUDIO}" \
+          -t "${capture_time}" \
           -map 0:v:0 -map 1:a:0 \
           -c:v libx264 -preset ultrafast -tune zerolatency \
           -af aresample=async=1:first_pts=0 \
@@ -130,7 +135,7 @@ case $ACTION in
 " "${SCENE_TEMPLATE}" > "${SCENE_PATH}"
         # cat ${SCENE_TEMPLATE}  | awk "{gsub(/<COMPUTER_DEV>/, \"${COMPUTER_DEV}\"); gsub(/<SPEAKER_DEV>/, \"${SPEAKER_DEV}\"); print}" > ${SCENE_PATH}
         # Decide environment
-        if [[ -z "$DISPLAY" ]] then
+        if [[ -z "$DISPLAY" ]] ; then
             PREFIX="xvfb-run"
         else
             PREFIX="env LIBGL_ALWAYS_SOFTWARE=true"

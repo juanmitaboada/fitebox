@@ -4,7 +4,6 @@ import os
 import time
 import RPi.GPIO as GPIO  # type: ignore[import] # noqa: N814
 import subprocess
-import serial
 
 # Configuration
 light_standby = (0.05, 1)
@@ -19,7 +18,8 @@ warmup_time = 1
 capture_time = 10
 goaway_time = 1
 recording_time = warmup_time + capture_time + goaway_time
-capture_command = ["./fitebox.sh", "smile", str(recording_time)]
+display = "Espressif"
+capture_command = ["./fitebox.sh", "smile", str(recording_time), display]
 
 # Light pin
 LIGHT = 23
