@@ -63,10 +63,10 @@ case $ACTION in
             capture_time="$ARG1"
         fi
         echo "Smile 😁 !!!"
-        if [[ -z "$ARG2" ]] ; then
-            echo "Resetting display"
-            sudo uhubctl -s "${ARG2}" -a 2
-        fi
+        # if [[ -z "$ARG2" ]] ; then
+        #     echo "Resetting display"
+        #     sudo uhubctl -s "${ARG2}" -a 2
+        # fi
         target="${HOME}/$(date +"%Y-%m-%d %H-%M-%S").mp4"
         ffmpeg -fflags +genpts \
           -f v4l2 -use_wallclock_as_timestamps 1 -thread_queue_size 512 \
