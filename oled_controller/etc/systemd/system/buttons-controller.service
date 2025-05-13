@@ -1,0 +1,15 @@
+[Unit]
+Description=Buttons service
+
+[Service]
+User=REPLACE_WITH_YOUR_USER
+Group=REPLACE_WITH_YOUR_GROUP
+WorkingDirectory=/home/REPLACE_WITH_YOUR_USER/oled_controller/
+ExecStart=/home/REPLACE_WITH_YOUR_USER/oled_controller/venv/bin/python /home/REPLACE_WITH_YOUR_USER/oled_controller/buttons_controller.py
+Restart=always
+StandardOutput=null
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
