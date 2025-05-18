@@ -8,6 +8,7 @@ luma.oled==3.14.0
 markdown-it-py==3.0.0
 mdurl==0.1.2
 obs-cli==0.8.2
+obs-websocket-py==1.0
 obsws-python==1.7.1
 pillow==11.2.1
 psutil==7.0.0
