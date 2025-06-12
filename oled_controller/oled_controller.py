@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import time
+import signal
 import socket
 import usb.core  # type: ignore
 import psutil
@@ -31,6 +33,7 @@ FONT_PATH = (
     Path(__file__).resolve().parent / "fonts" / "C&C Red Alert [INET].ttf"
 )
 FONT = ImageFont.truetype(str(FONT_PATH), 12)
+RUNNING = True
 
 
 def get_device(actual_args=None):
@@ -96,9 +99,12 @@ def get_status_oled():
         return "UNKNOWN"
 
 
-def draw_status_screen(device):
+def draw_status_screen(device, title=None):
     with canvas(device) as draw:
-        status_oled = get_status_oled()
+        if title:
+            status_oled = title
+        else:
+            status_oled = get_status_oled()
         draw.text((0, 0), f"{status_oled}", font=FONT, fill="white")
         if device.height >= 32:
             stats_line = (
@@ -145,16 +151,30 @@ def draw_status_screen(device):
             # LASTLINE
             # draw.text((0, 50), 'TALK_2 33:12 ????', font=FONT, fill="white")
 
+def on_exit(signum, frame):
+    global RUNNING
+    print(f"Recibida señal {signum}. Apagado o reinicio detectado.")
+    RUNNING=False
+
+# Install signal control
+signal.signal(signal.SIGTERM, on_exit)
+signal.signal(signal.SIGINT, on_exit)
 
 def main():
+    global RUNNING
     device = get_device()
-    while True:
+    while RUNNING:
         draw_status_screen(device)
         time.sleep(1)
+    # Exit
+    for i in range(5,0,-1):
+        draw_status_screen(device, f"Exiting in {i} seconds...")
+        print(f"Exiting in {i} seconds...")
+        time.sleep(1)
+    draw_status_screen(device, "Thank you!")
+    print("Thank you")
+    time.sleep(1)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        pass
+    main()
