@@ -198,7 +198,7 @@ def main():
         print("SHUTDOWN now!")
         # require nopasswd for /sbin/reboot
         # os.system("sudo /sbin/reboot")
-        os.system("sudo /sbin/shutdown")
+        os.system("sudo /sbin/shutdown now")
 
 
 if __name__ == "__main__":
