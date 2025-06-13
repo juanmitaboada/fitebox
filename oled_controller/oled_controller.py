@@ -34,6 +34,8 @@ FONT_PATH = (
 )
 FONT = ImageFont.truetype(str(FONT_PATH), 12)
 RUNNING = True
+SHUTDOWN = False
+STATUS_OLED = "/tmp/status-oled"
 
 
 def get_device(actual_args=None):
@@ -92,7 +94,7 @@ def find_usb_devices(devices):
 
 def get_status_oled():
     try:
-        with open("/tmp/status-oled", "r") as f:
+        with open(STATUS_OLED, "r") as f:
             estado = f.read().strip()
         return estado
     except Exception:
@@ -101,11 +103,7 @@ def get_status_oled():
 
 def draw_status_screen(device, title=None):
     with canvas(device) as draw:
-        if title:
-            status_oled = title
-        else:
-            status_oled = get_status_oled()
-        draw.text((0, 0), f"{status_oled}", font=FONT, fill="white")
+        draw.text((0, 0), f"{title}", font=FONT, fill="white")
         if device.height >= 32:
             stats_line = (
                 f"C {cpu_usage()}% "
@@ -151,29 +149,56 @@ def draw_status_screen(device, title=None):
             # LASTLINE
             # draw.text((0, 50), 'TALK_2 33:12 ????', font=FONT, fill="white")
 
+
 def on_exit(signum, frame):
     global RUNNING
     print(f"Recibida señal {signum}. Apagado o reinicio detectado.")
-    RUNNING=False
+    RUNNING = False
 
-# Install signal control
-signal.signal(signal.SIGTERM, on_exit)
-signal.signal(signal.SIGINT, on_exit)
 
 def main():
+
+    if os.path.exists(STATUS_OLED):
+        os.unlink(STATUS_OLED)
+
+    # Install signal control
+    signal.signal(signal.SIGTERM, on_exit)
+    signal.signal(signal.SIGINT, on_exit)
+
     global RUNNING
+    global SHUTDOWN
     device = get_device()
     while RUNNING:
-        draw_status_screen(device)
-        time.sleep(1)
+        status_oled = get_status_oled()
+        if status_oled == "EXIT":
+            RUNNING = False
+        elif status_oled == "SHUTDOWN":
+            RUNNING = False
+            SHUTDOWN = True
+        else:
+            draw_status_screen(device, status_oled)
+            time.sleep(1)
+
+    # Choose the right verb
+    if status_oled == "SHUTDOWN":
+        verb = "Shutting down"
+    else:
+        verb = "Exiting"
+
     # Exit
-    for i in range(5,0,-1):
-        draw_status_screen(device, f"Exiting in {i} seconds...")
-        print(f"Exiting in {i} seconds...")
+    for i in range(5, 0, -1):
+        draw_status_screen(device, f"{verb} in {i} seconds...")
+        print(f"{verb} in {i} seconds...")
         time.sleep(1)
     draw_status_screen(device, "Thank you!")
     print("Thank you")
     time.sleep(1)
+
+    if SHUTDOWN:
+        print("SHUTDOWN now!")
+        # require nopasswd for /sbin/reboot
+        # os.system("sudo /sbin/reboot")
+        os.system("sudo /sbin/shutdown")
 
 
 if __name__ == "__main__":

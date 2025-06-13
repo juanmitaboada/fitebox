@@ -13,6 +13,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
 )
 
+STATUS_OLED = "/tmp/status-oled"
 OLED_MEM = "Fitebox ready..."
 OBS_CLI = "/home/osc/tmp/venv/bin/obs-cli"
 OBS_PASSW = os.environ.get("OBS_API_PASSWORD")
@@ -27,7 +28,7 @@ def update_status_oled(estado=None, remember=True):
     elif remember:
         OLED_MEM = estado
     try:
-        with open("/tmp/status-oled", "w") as f:
+        with open(STATUS_OLED, "w") as f:
             f.write(estado)
         logging.info(f"OLED status upated: {estado}")
     except Exception as e:
@@ -77,8 +78,7 @@ def action_button3():
 
 def action_button4():
     logging.info("Button 4")
-    # require nopasswd for /sbin/reboot
-    os.system("sudo /sbin/reboot")
+    update_status_oled("SHUTDOWN")
 
 
 buttons = {
@@ -93,4 +93,8 @@ for button, action in buttons.items():
 
 update_status_oled()
 
-pause()
+try:
+    pause()
+except KeyboardInterrupt:
+    update_status_oled("EXIT")
+    os.unlink(STATUS_OLED)
