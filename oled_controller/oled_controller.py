@@ -102,10 +102,10 @@ def draw_status_screen(device):
         draw.text((0, 0), f"{status_oled}", font=FONT, fill="white")
         if device.height >= 32:
             stats_line = (
-                f"C {cpu_usage()} "
-                f"M {mem_usage()} "
-                f"D {disk_usage()} "
-                f"T {get_temp()}"
+                f"C {cpu_usage()}% "
+                f"M {mem_usage()}% "
+                f"D {disk_usage()}% "
+                f"T {get_temp()}C"
             )
             draw.text((0, 14), stats_line, font=FONT, fill="white")
 
