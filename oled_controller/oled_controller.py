@@ -3,32 +3,40 @@
 
 import time
 import socket
-import usb.core
+import usb.core  # type: ignore
 import psutil
 import sys
 from pathlib import Path
-from gpiozero import CPUTemperature
-from luma.core import cmdline, error
-from luma.core.render import canvas
+from gpiozero import CPUTemperature  # type: ignore
+from luma.core import cmdline, error  # type: ignore
+from luma.core.render import canvas  # type: ignore
 from PIL import ImageFont
 
 # Net ifaces
-NET_INTERFACES = ('wlan0', 'eth0')
+NET_INTERFACES = ("wlan0", "eth0")
 
 # Monitoring
-OBSERVED_DEVICES = {
-    "jieli":  {"vendor": 0x4c4a, "product": 0x4155},
-    "c925e":  {"vendor": 0x046d, "product": 0x085b},
-    "hagibis": {"vendor": 0x345f, "product": 0x2131},
+MICROPHONES = {
+    "jieli": {"vendor": 0x4C4A, "product": 0x4155},  # Microphone
+}
+VIDEO_CAPTURERS = {
+    "hagibis": {"vendor": 0x345F, "product": 0x2131},  # Video capturer
+}
+WEBCAMS = {
+    "c925e": {"vendor": 0x046D, "product": 0x085B},  # Webcam David
+    "angetube": {"vendor": 0x32E4, "product": 0x0200},  # Webcam Juanmi
 }
 
-FONT_PATH = Path(__file__).resolve().parent / 'fonts' / 'C&C Red Alert [INET].ttf'
+FONT_PATH = (
+    Path(__file__).resolve().parent / "fonts" / "C&C Red Alert [INET].ttf"
+)
 FONT = ImageFont.truetype(str(FONT_PATH), 12)
+
 
 def get_device(actual_args=None):
     if actual_args is None:
         actual_args = sys.argv[1:]
-    parser = cmdline.create_parser(description='arguments')
+    parser = cmdline.create_parser(description="arguments")
     args = parser.parse_args(actual_args)
 
     if args.config:
@@ -43,20 +51,25 @@ def get_device(actual_args=None):
         parser.error(e)
         return None
 
+
 def mem_usage():
     return round(psutil.virtual_memory().percent)
 
+
 def disk_usage():
-    return round(psutil.disk_usage('/').percent)
+    return round(psutil.disk_usage("/").percent)
+
 
 def cpu_usage():
     return round(psutil.cpu_percent())
+
 
 def get_temp():
     try:
         return round(CPUTemperature().temperature)
     except Exception:
         return -1
+
 
 def get_ip_addresses(family=socket.AF_INET, interfaces=NET_INTERFACES):
     for iface, snics in psutil.net_if_addrs().items():
@@ -65,49 +78,80 @@ def get_ip_addresses(family=socket.AF_INET, interfaces=NET_INTERFACES):
                 if snic.family == family:
                     yield iface, snic.address
 
+
 def find_usb_devices(devices):
     return {
-        name: usb.core.find(idVendor=ids["vendor"], idProduct=ids["product"]) is not None
+        name: usb.core.find(idVendor=ids["vendor"], idProduct=ids["product"])
+        is not None
         for name, ids in devices.items()
     }
+
 
 def get_status_oled():
     try:
         with open("/tmp/status-oled", "r") as f:
             estado = f.read().strip()
         return estado
-    except Exception as e:
+    except Exception:
         return "UNKNOWN"
+
 
 def draw_status_screen(device):
     with canvas(device) as draw:
         status_oled = get_status_oled()
-        draw.text((0, 0), f'{status_oled}', font=FONT, fill="white")
+        draw.text((0, 0), f"{status_oled}", font=FONT, fill="white")
         if device.height >= 32:
-            stats_line = f"C {cpu_usage()} M {mem_usage()} D {disk_usage()} T {get_temp()}"
+            stats_line = (
+                f"C {cpu_usage()} "
+                f"M {mem_usage()} "
+                f"D {disk_usage()} "
+                f"T {get_temp()}"
+            )
             draw.text((0, 14), stats_line, font=FONT, fill="white")
 
         if device.height >= 64:
             for iface, ip in get_ip_addresses():
-                draw.text((0, 26), f'{iface.upper()} {ip}', font=FONT, fill="white")
+                draw.text(
+                    (0, 26), f"{iface.upper()} {ip}", font=FONT, fill="white"
+                )
 
             try:
-                usb_status = find_usb_devices(OBSERVED_DEVICES)
-                if all(usb_status.values()):
-                    draw.text((0, 38), 'ALL DEVICES CONNECTED', font=FONT, fill="white")
+                usb_microphones = find_usb_devices(MICROPHONES)
+                usb_video_capturers = find_usb_devices(VIDEO_CAPTURERS)
+                usb_webcams = find_usb_devices(WEBCAMS)
+                if (
+                    any(usb_microphones.values())
+                    and any(usb_video_capturers.values())
+                    and any(usb_webcams.values())
+                ):
+                    draw.text(
+                        (0, 38),
+                        "ALL DEVICES CONNECTED",
+                        font=FONT,
+                        fill="white",
+                    )
                 else:
-                    draw.text((0, 38), 'ERROR!!! CHECK DEVICES', font=FONT, fill="white")
+                    draw.text(
+                        (0, 38),
+                        "ERROR!!! CHECK DEVICES",
+                        font=FONT,
+                        fill="white",
+                    )
             except usb.core.USBError as e:
-                draw.text((0, 38), f'USB ERROR: {str(e)}', font=FONT, fill="white")
+                draw.text(
+                    (0, 38), f"USB ERROR: {str(e)}", font=FONT, fill="white"
+                )
 
             # LASTLINE
             # draw.text((0, 50), 'TALK_2 33:12 ????', font=FONT, fill="white")
+
 
 def main():
     device = get_device()
     while True:
         draw_status_screen(device)
         time.sleep(1)
+
 
 if __name__ == "__main__":
     try:
