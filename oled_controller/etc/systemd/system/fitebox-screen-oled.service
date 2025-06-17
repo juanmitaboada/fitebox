@@ -1,5 +1,6 @@
 [Unit]
 Description=OLED screen service
+After=fitebox-buttons-controller.service
 
 [Service]
 User=osc
@@ -8,4 +9,4 @@ ExecStart=/home/osc/fitebox/oled_controller/.venv/bin/python /home/osc/fitebox/o
 Restart=always
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

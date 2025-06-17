@@ -23,7 +23,7 @@
     "push-to-talk": false,
     "push-to-talk-delay": 0,
     "settings": {
-      "device_id": "alsa_input.usb-Jieli_Technology_USB_Composite_Device_1120042704090316-00.mono-fallback"
+      "device_id": "alsa_input.usb-Linux_Foundation_Angetube_Live_Camera-02.analog-stereo"
     },
     "sync": 0,
     "versioned_id": "pulse_input_capture",
@@ -127,6 +127,35 @@
       "enabled": true,
       "flags": 0,
       "hotkeys": {},
+      "id": "text_ft2_source",
+      "mixers": 0,
+      "monitoring_type": 0,
+      "muted": false,
+      "name": "Info",
+      "prev_ver": 486539266,
+      "private_settings": {},
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "settings": {
+        "color1": 4278190080,
+        "color2": 4278190080,
+        "from_file": true,
+        "outline": true,
+        "text_file": "<INFO>"
+      },
+      "sync": 0,
+      "versioned_id": "text_ft2_source_v2",
+      "volume": 1
+    },
+    {
+      "balance": 0.5,
+      "deinterlace_field_order": 0,
+      "deinterlace_mode": 0,
+      "enabled": true,
+      "flags": 0,
+      "hotkeys": {},
       "id": "v4l2_input",
       "mixers": 0,
       "monitoring_type": 0,
@@ -181,9 +210,11 @@
         "OBSBasic.SelectScene": [],
         "libobs.hide_scene_item.Background": [],
         "libobs.hide_scene_item.Computer": [],
+        "libobs.hide_scene_item.Info": [],
         "libobs.hide_scene_item.Speaker": [],
         "libobs.show_scene_item.Background": [],
         "libobs.show_scene_item.Computer": [],
+        "libobs.show_scene_item.Info": [],
         "libobs.show_scene_item.Speaker": []
       },
       "id": "scene",
@@ -229,8 +260,8 @@
             "private_settings": {},
             "rot": 0,
             "scale": {
-              "x": 0.3199999928474426,
-              "y": 0.3201598525047302
+              "x": 0.1599999964237213,
+              "y": 0.159964457154274
             },
             "scale_filter": "disable",
             "show_transition": {
@@ -257,7 +288,7 @@
               "duration": 0
             },
             "id": 9,
-            "locked": true,
+            "locked": false,
             "name": "Computer",
             "pos": {
               "x": 254,
@@ -294,7 +325,7 @@
               "duration": 0
             },
             "id": 10,
-            "locked": true,
+            "locked": false,
             "name": "Speaker",
             "pos": {
               "x": 17,
@@ -305,6 +336,43 @@
             "scale": {
               "x": 0.244140625,
               "y": 0.2447916716337204
+            },
+            "scale_filter": "disable",
+            "show_transition": {
+              "duration": 0
+            },
+            "visible": true
+          },
+          {
+            "align": 5,
+            "blend_method": "default",
+            "blend_type": "normal",
+            "bounds": {
+              "x": 0,
+              "y": 0
+            },
+            "bounds_align": 0,
+            "bounds_type": 0,
+            "crop_bottom": 0,
+            "crop_left": 0,
+            "crop_right": 0,
+            "crop_top": 0,
+            "group_item_backup": false,
+            "hide_transition": {
+              "duration": 0
+            },
+            "id": 11,
+            "locked": false,
+            "name": "Info",
+            "pos": {
+              "x": 565,
+              "y": 622
+            },
+            "private_settings": {},
+            "rot": 0,
+            "scale": {
+              "x": 0.10841751098632812,
+              "y": 0.10820244252681732
             },
             "scale_filter": "disable",
             "show_transition": {

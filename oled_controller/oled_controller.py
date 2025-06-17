@@ -35,6 +35,7 @@ FONT_PATH = (
 FONT = ImageFont.truetype(str(FONT_PATH), 12)
 RUNNING = True
 SHUTDOWN = False
+ALL_DEVICES_READY = False
 STATUS_OLED = "/tmp/status-oled"
 
 
@@ -102,6 +103,7 @@ def get_status_oled():
 
 
 def draw_status_screen(device, title=None):
+    global ALL_DEVICES_READY
     with canvas(device) as draw:
         draw.text((0, 0), f"{title}", font=FONT, fill="white")
         if device.height >= 32:
@@ -126,8 +128,9 @@ def draw_status_screen(device, title=None):
                 microphone_found = any(usb_microphones.values())
                 video_capturer_found = any(usb_video_capturers.values())
                 webcam_found = any(usb_webcams.values())
+                ALL_DEVICES_READY = microphone_found and video_capturer_found and webcam_found
 
-                if microphone_found and video_capturer_found and webcam_found:
+                if ALL_DEVICES_READY:
                     draw.text(
                         (0, 38),
                         "ALL DEVICES CONNECTED",
@@ -172,15 +175,13 @@ def on_exit(signum, frame):
 
 def main():
 
-    if os.path.exists(STATUS_OLED):
-        os.unlink(STATUS_OLED)
-
     # Install signal control
     signal.signal(signal.SIGTERM, on_exit)
     signal.signal(signal.SIGINT, on_exit)
 
     global RUNNING
     global SHUTDOWN
+    global ALL_DEVICES_READY
     device = get_device()
     while RUNNING:
         status_oled = get_status_oled()
@@ -190,7 +191,14 @@ def main():
             RUNNING = False
             SHUTDOWN = True
         else:
-            draw_status_screen(device, status_oled)
+            if status_oled == "READY":
+                if ALL_DEVICES_READY:
+                    title = "Fitebox ready..."
+                else:
+                    title = "Fitebox NOT ready..."
+            else:
+                title = status_oled
+            draw_status_screen(device, title)
             time.sleep(1)
 
     # Choose the right verb
