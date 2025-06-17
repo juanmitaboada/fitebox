@@ -123,11 +123,11 @@ def draw_status_screen(device, title=None):
                 usb_microphones = find_usb_devices(MICROPHONES)
                 usb_video_capturers = find_usb_devices(VIDEO_CAPTURERS)
                 usb_webcams = find_usb_devices(WEBCAMS)
-                if (
-                    any(usb_microphones.values())
-                    and any(usb_video_capturers.values())
-                    and any(usb_webcams.values())
-                ):
+                microphone_found = any(usb_microphones.values())
+                video_capturer_found = any(usb_video_capturers.values())
+                webcam_found = any(usb_webcams.values())
+
+                if microphone_found and video_capturer_found and webcam_found:
                     draw.text(
                         (0, 38),
                         "ALL DEVICES CONNECTED",
@@ -135,9 +135,19 @@ def draw_status_screen(device, title=None):
                         fill="white",
                     )
                 else:
+                    msg = "Missing"
+                    if not microphone_found:
+                        msg += " Mic"
+
+                    if not video_capturer_found:
+                        msg += " Cap"
+
+                    if not webcam_found:
+                        msg += " Web"
+
                     draw.text(
                         (0, 38),
-                        "ERROR!!! CHECK DEVICES",
+                        f"ERROR {msg}",
                         font=FONT,
                         fill="white",
                     )
@@ -152,7 +162,11 @@ def draw_status_screen(device, title=None):
 
 def on_exit(signum, frame):
     global RUNNING
-    print(f"Recibida señal {signum}. Apagado o reinicio detectado.")
+    global SHUTDOWN
+    if SHUTDOWN:
+        print(f"Recibida señal {signum}. Apagado o reinicio detectado.")
+    else:
+        print(f"Recibida señal {signum}. Cerrando.")
     RUNNING = False
 
 

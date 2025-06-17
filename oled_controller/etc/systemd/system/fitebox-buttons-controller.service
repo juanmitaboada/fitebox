@@ -1,0 +1,16 @@
+[Unit]
+Description=Buttons service
+
+[Service]
+User=osc
+Group=osc
+EnvironmentFile=/home/osc/fitebox/oled_controller/.env
+WorkingDirectory=/home/osc/fitebox/oled_controller/
+ExecStart=/home/osc/fitebox/oled_controller/.venv/bin/python /home/osc/fitebox/oled_controller/buttons_controller.py
+Restart=always
+StandardOutput=null
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

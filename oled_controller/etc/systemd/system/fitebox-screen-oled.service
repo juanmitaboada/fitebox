@@ -1,0 +1,11 @@
+[Unit]
+Description=OLED screen service
+
+[Service]
+User=osc
+Group=osc
+ExecStart=/home/osc/fitebox/oled_controller/.venv/bin/python /home/osc/fitebox/oled_controller/oled_controller.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
