@@ -12,7 +12,7 @@ One box per room. A volunteer plugs it in before the first talk, collects record
 
 ```
   License .... Apache 2.0
-  Version .... 3.0.0
+  Version .... 1.0
   Status ..... Production-ready - deploying at OpenSouthCode 2026, Málaga
   Authors .... Juanmi Taboada, David Santos
   Repository . https://github.com/juanmitaboada/fitebox
