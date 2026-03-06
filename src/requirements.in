@@ -1,0 +1,17 @@
+rpi-lgpio
+gpiod
+gpiozero
+psutil
+pillow
+luma.oled
+pygame
+obs-websocket-py
+obsws-python
+python-dotenv
+pyserial
+pyusb
+fastapi
+uvicorn[standard]
+jinja2
+qrcode
+python-multipart

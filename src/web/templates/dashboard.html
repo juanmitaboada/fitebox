@@ -1,0 +1,1763 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+
+{% block title %}FITEBOX - Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-content dashboard-grid">
+
+    <!-- Left column -->
+    <div class="dash-col">
+        <!-- Schedule -->
+        <div class="card card-schedule">
+            <div class="card-header">
+                <span class="card-title">Schedule</span>
+                <span class="text-xs text-dim text-mono" id="schedule-updated"></span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Schedule URL</label>
+                <div class="flex gap-8">
+                    <input type="text" id="schedule-url" class="form-input" style="flex:1"
+                           placeholder="https://...schedule.xml">
+                    <button class="btn btn-sm btn-primary" onclick="updateSchedule()"
+                            style="width:auto;padding:10px 14px;flex-shrink:0" title="Download XML">↻</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Room</label>
+                <select id="schedule-room" class="form-select" onchange="setRoom()">
+                    <option value="">-- Download schedule first --</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Streaming Progress Banner -->
+        <div class="drain-banner hidden" id="drain-banner">
+            <div class="drain-header">
+                <span class="drain-spinner"></span>
+                <span class="drain-label" id="drain-label">Finishing stream...</span>
+            </div>
+            <div class="drain-progress-track">
+                <div class="drain-progress-bar" id="drain-progress-bar"></div>
+            </div>
+            <div class="drain-detail" id="drain-detail"></div>
+        </div>
+
+        <!-- Recording Control -->
+        <div class="card card-recording">
+            <div class="card-header">
+                <span class="card-title">Recording</span>
+                <span class="status-badge ready" id="rec-badge">READY</span>
+                <span class="status-badge streaming hidden" id="stream-badge-dash"><span id="stream-badge-icon"></span> <span id="stream-badge-text">LIVE</span></span>
+            </div>
+
+            <div id="rec-idle">
+                <div class="flex gap-8 items-center">
+                    <div style="flex:1">
+                        <div class="form-group" style="margin-bottom:8px">
+                            <label class="form-label">Author</label>
+                            <input type="text" id="rec-author" class="form-input" placeholder="Speaker name...">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0">
+                            <label class="form-label">Title</label>
+                            <input type="text" id="rec-title" class="form-input" placeholder="Talk title...">
+                        </div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-self:stretch">
+                        <button class="btn btn-sm" onclick="refreshSession()"
+                                style="flex:1;padding:8px 14px"
+                                title="Auto-detect from schedule">↻</button>
+                        <button class="btn btn-sm" onclick="browseTalks()"
+                                style="flex:1;padding:8px 14px"
+                                title="Browse all talks">☰</button>
+                    </div>
+                </div>
+
+                <div id="session-info" class="hidden" style="margin-top:10px;padding:10px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius)">
+                    <div class="text-xs text-dim" id="session-description" style="line-height:1.5;max-height:240px;overflow-y:auto"></div>
+                    <div class="text-xs text-mono mt-8" id="session-meta" style="color:var(--green)"></div>
+                </div>
+
+                <div class="rec-btn-group mt-12">
+                    <button class="btn rec-btn-stream" id="btn-stream-cfg" onclick="openStreamModal()" title="Configure streaming">
+                        &#128225;
+                        <span class="sm-dot" id="sm-dot"></span>
+                    </button>
+                    <button class="btn rec-btn-start" id="btn-start" onclick="startRecording()">
+                        ● Start Recording
+                    </button>
+                </div>
+                <div id="stream-ready-msg" class="hidden" style="text-align:center;margin-top:6px;font-size:0.68rem;font-family:var(--mono)">
+                    <span id="stream-ready-icon" style="color:var(--green)">&#10003;</span>
+                    <span id="stream-ready-text" style="color:var(--text-dim)">Streaming to <span id="stream-ready-dest"></span></span>
+                </div>
+            </div>
+
+            <div id="rec-active" class="hidden">
+                <div class="rec-timer" id="rec-timer">00:00:00</div>
+                <div class="text-dim text-xs text-mono" style="text-align:center;margin:4px 0" id="rec-author-display"></div>
+                <div class="text-dim text-xs text-mono" style="text-align:center;margin:2px 0" id="rec-title-display"></div>
+                <div id="rec-histogram" class="rec-histogram" style="display:none" title="Recording health - each segment shows frame processing quality over time. Green = OK, yellow = minor drops, red = significant frame drops.">
+                    <div class="rec-histo-bar" id="rec-histo-bar"></div>
+                    <div class="rec-histo-label" id="rec-histo-label"></div>
+                </div>
+                <div class="dash-controls mt-8" style="display:flex;align-items:center;gap:6px">
+                    <button class="btn btn-sm btn-rec-action" onclick="dashDoRefreshPreview()" id="dash-btn-preview" disabled>&#8635; Refresh Preview</button>
+                </div>
+                <div class="dash-thumb-frame" id="dash-thumb-frame">
+                    <div class="dash-thumb-placeholder" id="dash-thumb-ph">Waiting for first clip...</div>
+                    <video id="dash-preview-video" controls preload="none" playsinline style="display:none;width:100%;border-radius:6px"></video>
+                </div>
+                <button class="btn rec-btn-stop mt-12" id="btn-stop" onclick="stopRecording()">
+                    &#9632; Stop Recording
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Right column -->
+    <div class="dash-col">
+
+        <!-- System Stats -->
+        <div class="card card-system">
+            <div class="card-header">
+                <span class="card-title">System</span>
+            </div>
+            <div class="stat-grid three-col">
+                <div class="stat-item">
+                    <div class="stat-label">CPU</div>
+                    <div class="stat-value" id="stat-cpu">--<span class="stat-unit">%</span></div>
+                    <div class="progress-bar"><div class="progress-bar-fill green" id="bar-cpu" style="width:0"></div></div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Temp</div>
+                    <div class="stat-value" id="stat-temp">--<span class="stat-unit">°C</span></div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Disk</div>
+                    <div class="stat-value" id="stat-disk">--<span class="stat-unit">GB</span></div>
+                    <div class="progress-bar"><div class="progress-bar-fill green" id="bar-disk" style="width:0"></div></div>
+                </div>
+            </div>
+            <div class="stat-grid three-col" style="margin-top:8px">
+                <div class="stat-item">
+                    <div class="stat-label">Disk I/O</div>
+                    <div class="stat-value" style="font-size:0.65rem" id="stat-io">--</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Rec. Avail.</div>
+                    <div class="stat-value" id="stat-rec-remaining">--</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Internet</div>
+                    <div class="stat-value" id="stat-ping">--<span class="stat-unit">ms</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CPU + Temperature Graph -->
+        <div class="card card-cpugraph">
+            <div class="card-header">
+                <span class="card-title">CPU &amp; Temperature</span>
+                <span class="text-xs text-dim text-mono" id="cpu-graph-label"></span>
+            </div>
+            <canvas id="chart-cpu" width="580" height="100" style="width:100%;height:75px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-surface)"></canvas>
+            <div class="flex justify-between mt-4" style="padding:0 4px">
+                <span class="text-xs" style="color:#40c0e0">━ CPU %</span>
+                <span class="text-xs" style="color:#e07030">━ Temp °C</span>
+            </div>
+        </div>
+
+        <!-- Unified Network Graph -->
+        <div class="card card-traffic">
+            <div class="card-header">
+                <span class="card-title">Network</span>
+                <span class="text-xs text-dim text-mono" id="net-info-inline"></span>
+            </div>
+            <canvas id="chart-net" width="580" height="100" style="width:100%;height:75px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-surface)"></canvas>
+            <div class="flex justify-between mt-4" style="padding:0 4px">
+                <span class="text-xs"><span style="color:#e8a020">━</span> RX &nbsp; <span style="color:#e84040">━</span> TX</span>
+                <span class="text-xs text-dim text-mono" id="net-rate-label"></span>
+            </div>
+        </div>
+
+        <!-- System Actions -->
+        <div class="card card-power">
+            <div class="card-header">
+                <span class="card-title">Power</span>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-sm" onclick="doReboot()">Reboot</button>
+                <button class="btn btn-sm btn-danger" onclick="doShutdown()">Shutdown</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Talk Browser Modal -->
+    <div id="talk-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span class="card-title">Browse Talks</span>
+                <span class="text-xs text-dim text-mono" id="talk-modal-room"></span>
+                <button class="modal-close" onclick="closeTalkModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="talk-tree">
+                <div class="text-dim" style="text-align:center;padding:20px">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Streaming Configuration Modal -->
+<div id="stream-modal" class="sm-overlay hidden" onclick="if(event.target===this)closeStreamModal()">
+    <div class="sm-dialog">
+        <div class="sm-header">
+            <span class="sm-title">Streaming Configuration</span>
+            <button class="sm-close" onclick="closeStreamModal()">&times;</button>
+        </div>
+
+        <div class="sm-body">
+            <div id="sm-config">
+                <!-- Destination tabs -->
+                <div class="sm-tabs">
+                    <button class="sm-tab active" onclick="smSelectDest('youtube')" id="sm-tab-youtube">
+                        <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M21.6 7.2s-.2-1.5-.8-2.1c-.8-.8-1.6-.8-2-.9C16 4 12 4 12 4s-4 0-6.8.2c-.4.1-1.2.1-2 .9-.6.6-.8 2.1-.8 2.1S2.2 9 2.2 10.8v1.4c0 1.8.2 3.6.2 3.6s.2 1.5.8 2.1c.8.8 1.8.8 2.2.9 1.6.1 6.6.2 6.6.2s4 0 6.8-.2c.4-.1 1.2-.1 2-.9.6-.6.8-2.1.8-2.1s.2-1.8.2-3.6v-1.4c0-1.8-.2-3.6-.2-3.6zM9.9 15.2V8.8l5.4 3.2-5.4 3.2z"/></svg>YouTube
+                    </button>
+                    <button class="sm-tab" onclick="smSelectDest('twitch')" id="sm-tab-twitch">
+                        <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M4.3 3L3 6.3v12.4h4.5V21h3l2.7-2.3h4.1L21 15V3H4.3zm14.4 11.2l-3 3H11l-2.7 2.3V17.2H5.3V5.3h13.4v8.9zM15 8.3v4.5h-2.3V8.3H15zm-5.3 0v4.5H7.5V8.3h2.2z"/></svg>Twitch
+                    </button>
+                    <button class="sm-tab" onclick="smSelectDest('custom')" id="sm-tab-custom">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M5.6 18.4A9 9 0 0 1 3 12a9 9 0 0 1 2.6-6.4"/><path d="M18.4 5.6A9 9 0 0 1 21 12a9 9 0 0 1-2.6 6.4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Custom
+                    </button>
+                </div>
+
+                <!-- YouTube -->
+                <div id="sm-cfg-youtube">
+                    <label class="form-label">Stream Key</label>
+                    <div class="flex gap-8">
+                        <input type="password" id="sm-yt-key" class="form-input" style="flex:1"
+                               placeholder="xxxx-xxxx-xxxx-xxxx"
+                               onblur="validateStreamKey()">
+                        <button class="btn btn-sm" style="width:auto;padding:10px 14px;flex-shrink:0"
+                                onclick="toggleVis('sm-yt-key')">&#128065;</button>
+                    </div>
+                </div>
+
+                <!-- Twitch -->
+                <div id="sm-cfg-twitch" class="hidden">
+                    <label class="form-label">Stream Key</label>
+                    <div class="flex gap-8">
+                        <input type="password" id="sm-tw-key" class="form-input" style="flex:1"
+                               placeholder="live_xxxxxxxxxxxx"
+                               onblur="validateStreamKey()">
+                        <button class="btn btn-sm" style="width:auto;padding:10px 14px;flex-shrink:0"
+                                onclick="toggleVis('sm-tw-key')">&#128065;</button>
+                    </div>
+                </div>
+
+                <!-- Custom -->
+                <div id="sm-cfg-custom" class="hidden">
+                    <label class="form-label">RTMP URL</label>
+                    <input type="text" id="sm-custom-url" class="form-input"
+                           placeholder="rtmp://your.server/live/key"
+                           onblur="validateStreamKey()">
+                </div>
+
+                <!-- Validation status -->
+                <div id="sm-validation" class="sm-validation hidden">
+                    <span id="sm-val-icon"></span>
+                    <span id="sm-val-text"></span>
+                </div>
+
+                <!-- Quality -->
+                <label class="form-label" style="margin-top:12px">Quality</label>
+                <div class="sm-quality-list">
+                    <div class="sm-q-card active" data-q="1080p" onclick="smSelectQuality(this,'1080p')">
+                        <span class="sm-q-radio"></span>
+                        <span class="sm-q-label">1080p</span>
+                        <div class="sm-q-meters">
+                            <div class="sm-q-meter"><span class="sm-q-m-label">CPU</span><span class="sm-q-bar"><i class="g"></i><i></i><i></i><i></i><i></i></span></div>
+                            <div class="sm-q-meter"><span class="sm-q-m-label">NET</span><span class="sm-q-bar"><i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i></span></div>
+                        </div>
+                        <span class="sm-q-bw">~5-8 Mbps</span>
+                    </div>
+                    <div class="sm-q-card" data-q="720p" onclick="smSelectQuality(this,'720p')">
+                        <span class="sm-q-radio"></span>
+                        <span class="sm-q-label">720p</span>
+                        <div class="sm-q-meters">
+                            <div class="sm-q-meter"><span class="sm-q-m-label">CPU</span><span class="sm-q-bar"><i class="y"></i><i class="y"></i><i class="y"></i><i></i><i></i></span></div>
+                            <div class="sm-q-meter"><span class="sm-q-m-label">NET</span><span class="sm-q-bar"><i class="y"></i><i class="y"></i><i class="y"></i><i></i><i></i></span></div>
+                        </div>
+                        <span class="sm-q-bw">~3-4 Mbps</span>
+                    </div>
+                    <div class="sm-q-card" data-q="480p" onclick="smSelectQuality(this,'480p')">
+                        <span class="sm-q-radio"></span>
+                        <span class="sm-q-label">480p</span>
+                        <div class="sm-q-meters">
+                            <div class="sm-q-meter"><span class="sm-q-m-label">CPU</span><span class="sm-q-bar"><i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i><i></i></span></div>
+                            <div class="sm-q-meter"><span class="sm-q-m-label">NET</span><span class="sm-q-bar"><i class="g"></i><i class="g"></i><i></i><i></i><i></i></span></div>
+                        </div>
+                        <span class="sm-q-bw">~1-2 Mbps</span>
+                    </div>
+                </div>
+                <div class="sm-q-desc" id="sm-q-desc">
+                    Same quality as recording. No re-encoding - nearly zero extra CPU cost.
+                </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div style="display:flex;gap:8px;margin-top:16px">
+                <button class="btn" id="sm-btn-activate" onclick="smActivate()"
+                        style="flex:1;background:var(--green);color:#000;font-weight:600">
+                    Activate Streaming
+                </button>
+                <button class="btn hidden" id="sm-btn-deactivate" onclick="smDeactivate()"
+                        style="flex:1;background:var(--red);color:#fff;font-weight:600">
+                    Deactivate
+                </button>
+            </div>
+            <div class="sm-active-status hidden" id="sm-active-status">
+                <span style="color:var(--green)">● Streaming active</span>
+                <span class="text-dim" id="sm-active-dest"></span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    /* Recording health histogram */
+    .rec-histogram {
+        margin-top: 8px; width: 100%; cursor: help;
+    }
+    .rec-histo-bar {
+        width: 100%; height: 14px;
+        background: #111; border: 1px solid var(--border);
+        border-radius: 3px; overflow: hidden;
+        display: flex; align-items: stretch;
+    }
+    .rec-histo-bar .h-seg {
+        min-width: 1px; height: 100%;
+        transition: opacity 0.3s;
+    }
+    .rec-histo-bar .h-seg.ok { background: var(--green); }
+    .rec-histo-bar .h-seg.warn { background: #c90; }
+    .rec-histo-bar .h-seg.bad { background: var(--red); }
+    .rec-histo-bar .h-seg.h-rec-tail {
+        background: linear-gradient(90deg, #333 25%, #555 50%, #333 75%);
+        background-size: 200% 100%;
+        animation: histo-pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes histo-pulse {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+    .rec-histo-label {
+        margin-top: 2px;
+        font-family: var(--mono); font-size: 0.6rem;
+        color: var(--text-dim); display: flex;
+        justify-content: space-between;
+    }
+
+    .dash-thumb-frame {
+        margin-top: 10px; width: 100%; aspect-ratio: 16/9;
+        background: #0a0a0a; border: 1px solid var(--border);
+        border-radius: 6px; overflow: hidden; position: relative;
+    }
+    .dash-thumb-placeholder {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--text-dim); font-family: var(--mono); font-size: 0.7rem;
+    }
+    .dash-thumb-frame img {
+        position: absolute; inset: 0;
+        width: 100%; height: 100%; object-fit: contain; display: none;
+    }
+    .dash-thumb-frame img.loaded { display: block; }
+    .dash-thumb-frame img.loaded ~ .dash-thumb-placeholder { display: none; }
+
+    /* Recording action buttons - 3 states: loading / cooldown / ready */
+    .btn-rec-action {
+        position: relative; overflow: hidden;
+        transition: opacity 0.3s, border-color 0.3s;
+    }
+    .btn-rec-action.loading {
+        pointer-events: none; opacity: 0.8;
+        background: repeating-linear-gradient(
+            -45deg, transparent 0px, transparent 6px, rgba(255,255,255,0.08) 6px, rgba(255,255,255,0.08) 12px
+        ) !important;
+        background-size: 17px 100% !important;
+        animation: btn-stripe 0.5s linear infinite;
+    }
+    @keyframes btn-stripe { to { background-position: 17px 0; } }
+    .btn-rec-action.cooldown {
+        pointer-events: none; opacity: 0.6;
+    }
+    .btn-rec-action.cooldown .btn-fill {
+        position: absolute; top: 0; left: 0; bottom: 0;
+        background: rgba(100,200,100,0.15); border-radius: inherit;
+        transition: width linear;
+    }
+    .btn-rec-action.ready {
+        border-color: var(--green) !important; color: var(--green) !important;
+        opacity: 1; cursor: pointer;
+    }
+
+    /* Recording button group */
+    .rec-btn-group { display: flex; gap: 0; }
+    .rec-btn-group .rec-btn-stream {
+        flex-shrink: 0; width: 48px; font-size: 18px;
+        border-radius: var(--radius) 0 0 var(--radius);
+        border-right: none; background: var(--bg-surface);
+        border: 1px solid var(--border); color: var(--text-dim);
+        cursor: pointer; transition: all 0.15s; position: relative;
+    }
+    .rec-btn-group .rec-btn-stream:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    /* Status dot on streaming button */
+    .sm-dot {
+        position: absolute; top: 3px; right: 3px;
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--text-dim); opacity: 0.3;
+        transition: all 0.2s;
+    }
+    .sm-dot.error { background: var(--red); opacity: 1; }
+    .sm-dot.ok { background: var(--green); opacity: 1; }
+
+    .rec-btn-group .rec-btn-start {
+        flex: 1; border-radius: 0 var(--radius) var(--radius) 0;
+    }
+    .rec-btn-group .rec-btn-start.blocked {
+        opacity: 0.4; cursor: not-allowed; pointer-events: none;
+    }
+    .rec-btn-quality {
+        display: inline-block; font-size: 0.6rem; font-weight: 700;
+        padding: 1px 5px; margin-left: 4px; border-radius: 3px;
+        background: rgba(255,255,255,0.15); vertical-align: 1px;
+    }
+
+    /* Streaming modal overlay */
+    .sm-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.6); z-index: 1000;
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+    }
+    .sm-overlay.hidden { display: none; }
+    .sm-dialog {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 12px; max-width: 420px; width: 100%;
+        max-height: 80vh; overflow-y: auto;
+    }
+    .sm-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .sm-title { font-family: var(--mono); font-size: 0.82rem; font-weight: 700; }
+    .sm-close {
+        background: none; border: none; color: var(--text-dim);
+        font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px;
+    }
+    .sm-close:hover { color: var(--text); }
+    .sm-body { padding: 16px; }
+
+    /* Toggle */
+    .sm-toggle {
+        display: flex; align-items: center; gap: 10px; cursor: pointer;
+        margin-bottom: 14px;
+    }
+    .sm-toggle input[type="checkbox"] {
+        width: 18px; height: 18px; accent-color: var(--green);
+    }
+    .sm-toggle-label {
+        font-family: var(--mono); font-size: 0.78rem; font-weight: 600;
+    }
+
+    /* Tabs */
+    .sm-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+    .sm-tab {
+        flex: 1; padding: 8px; background: var(--bg-surface);
+        border: 1px solid var(--border); border-radius: var(--radius);
+        cursor: pointer; font-family: var(--mono); font-size: 0.68rem;
+        font-weight: 600; text-transform: uppercase; color: var(--text-dim);
+        text-align: center; transition: all 0.15s;
+    }
+    .sm-tab:hover { border-color: var(--text-dim); }
+    .sm-tab.active { border-color: var(--green); background: var(--green-dim); color: var(--green); }
+
+    /* Validation */
+    /* Drain / progress banner */
+    .drain-banner {
+        background: linear-gradient(135deg, rgba(48,176,192,0.10), rgba(48,176,192,0.05));
+        border: 1px solid rgba(48,176,192,0.25);
+        border-radius: 8px; padding: 12px 14px;
+    }
+    .drain-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .drain-spinner {
+        width: 14px; height: 14px; border-radius: 50%;
+        border: 2px solid rgba(48,176,192,0.3);
+        border-top-color: #30b0c0;
+        animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .drain-label { font-size: 13px; font-weight: 600; color: #30b0c0; }
+    .drain-progress-track {
+        width: 100%; height: 6px; background: rgba(255,255,255,0.06);
+        border-radius: 3px; overflow: hidden;
+    }
+    .drain-progress-bar {
+        height: 100%; width: 0%; background: #30b0c0;
+        border-radius: 3px; transition: width 0.5s ease;
+    }
+    .drain-detail { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+    .sm-validation {
+        margin-top: 8px; padding: 8px 10px; border-radius: var(--radius);
+        font-size: 0.72rem; font-family: var(--mono); display: flex;
+        align-items: center; gap: 6px;
+    }
+    .sm-validation.ok { background: var(--green-dim); color: var(--green); }
+    .sm-validation.error { background: rgba(232,64,64,0.08); color: var(--red); }
+    .sm-validation.checking { background: var(--bg-surface); color: var(--text-dim); }
+
+    /* Quality cards */
+    .sm-quality-list { display: flex; flex-direction: column; gap: 4px; }
+    .sm-q-card {
+        display: flex; align-items: center; gap: 8px;
+        padding: 9px 10px; background: var(--bg-input);
+        border: 1px solid var(--border); border-left: 3px solid transparent;
+        border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
+    }
+    .sm-q-card:hover { background: var(--bg-surface); }
+    .sm-q-card.active {
+        background: var(--green-dim); border-color: var(--green);
+        border-left-color: var(--green);
+    }
+    .sm-q-radio {
+        width: 12px; height: 12px; border-radius: 50%;
+        border: 2px solid var(--text-dim); flex-shrink: 0;
+        position: relative; transition: all 0.15s;
+    }
+    .sm-q-card.active .sm-q-radio { border-color: var(--green); }
+    .sm-q-card.active .sm-q-radio::after {
+        content: ''; position: absolute; top: 1.5px; left: 1.5px;
+        width: 5px; height: 5px; border-radius: 50%; background: var(--green);
+    }
+    .sm-q-label {
+        font-family: var(--mono); font-size: 0.78rem; font-weight: 700;
+        min-width: 38px;
+    }
+    .sm-q-meters { display: flex; gap: 10px; flex: 1; }
+    .sm-q-meter {
+        display: flex; align-items: center; gap: 4px;
+        font-family: var(--mono); font-size: 0.58rem; color: var(--text-dim);
+        text-transform: uppercase;
+    }
+    .sm-q-m-label { min-width: 20px; }
+    .sm-q-bar { display: flex; gap: 2px; }
+    .sm-q-bar i {
+        display: block; width: 5px; height: 10px;
+        border-radius: 1px; background: var(--border);
+    }
+    .sm-q-bar i.g { background: var(--green); }
+    .sm-q-bar i.y { background: var(--yellow); }
+    .sm-q-bar i.r { background: var(--red); }
+    .sm-q-bw {
+        font-family: var(--mono); font-size: 0.58rem;
+        color: var(--text-dim); white-space: nowrap; flex-shrink: 0;
+    }
+    .sm-q-desc {
+        margin-top: 8px; padding: 8px 10px;
+        font-size: 0.7rem; line-height: 1.5; color: var(--text-dim);
+        background: var(--bg-surface); border: 1px solid var(--border);
+        border-radius: var(--radius); transition: all 0.15s;
+    }
+    .sm-active-status {
+        margin-top: 8px; padding: 8px 12px;
+        font-size: 12px; display: flex; justify-content: space-between;
+        background: rgba(0,200,100,0.06); border-radius: 6px;
+        border: 1px solid rgba(0,200,100,0.15);
+    }
+</style>
+<script>
+    if (!FITEBOX.isAuthenticated()) window.location.href = '/';
+
+    let scheduleSession = null;
+
+    // --- Network info: now uses WS data (ip, ssid from manager) ---
+    // No separate /api/network/info polling needed for dashboard
+
+    // --- Load schedule config on page load ---
+    (async () => {
+        try {
+            const config = await FITEBOX.get('/api/schedule/config');
+            if (config.url) document.getElementById('schedule-url').value = config.url;
+            if (config.last_updated) {
+                document.getElementById('schedule-updated').textContent =
+                    'Updated: ' + new Date(config.last_updated).toLocaleDateString();
+            }
+
+            // Load rooms
+            const roomData = await FITEBOX.get('/api/schedule/rooms');
+            if (roomData.rooms && roomData.rooms.length > 0) {
+                populateRooms(roomData.rooms, config.room || '');
+            }
+
+            // Load current session
+            const session = await FITEBOX.get('/api/schedule/session');
+            if (session && session.title) {
+                displaySession(session);
+            }
+        } catch (e) {
+            console.log('Schedule config load:', e);
+        }
+    })();
+
+    function populateRooms(rooms, selectedRoom) {
+        const sel = document.getElementById('schedule-room');
+        sel.innerHTML = '<option value="">-- Select room --</option>';
+        rooms.forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r;
+            opt.textContent = r;
+            if (r === selectedRoom) opt.selected = true;
+            sel.appendChild(opt);
+        });
+    }
+
+    function displaySession(session) {
+        if (!session || !session.title) {
+            document.getElementById('session-info').classList.add('hidden');
+            return;
+        }
+
+        scheduleSession = session;
+
+        document.getElementById('rec-author').value = session.author || '';
+        document.getElementById('rec-title').value = session.title || '';
+
+        const desc = session.description || '';
+        const descEl = document.getElementById('session-description');
+        descEl.textContent = desc;
+
+        const meta = [];
+        if (session.start && session.end) meta.push(session.start + '–' + session.end);
+        if (session.track) meta.push(session.track);
+        if (session.language) meta.push(session.language);
+        document.getElementById('session-meta').textContent = meta.join(' · ');
+
+        document.getElementById('session-info').classList.toggle('hidden', !desc && !meta.length);
+    }
+
+    // --- Schedule actions ---
+
+    async function updateSchedule() {
+        const url = document.getElementById('schedule-url').value.trim();
+        if (!url) {
+            // Reset to default
+            const year = new Date().getFullYear();
+            const defaultUrl = `https://www.opensouthcode.org/conferences/opensouthcode${year}/schedule.xml`;
+            document.getElementById('schedule-url').value = defaultUrl;
+            FITEBOX.toast('URL reset to default', 'info');
+            return;
+        }
+
+        FITEBOX.toast('Downloading schedule...', 'info');
+        const res = await FITEBOX.post('/api/schedule/update', { url });
+
+        if (res.status === 'ok') {
+            FITEBOX.toast('Schedule downloaded', 'success');
+            // Refresh rooms
+            const roomData = await FITEBOX.get('/api/schedule/rooms');
+            if (roomData.rooms) {
+                const config = await FITEBOX.get('/api/schedule/config');
+                populateRooms(roomData.rooms, config.room || '');
+            }
+        } else {
+            FITEBOX.toast(res.message || 'Download failed', 'error');
+        }
+    }
+
+    async function setRoom() {
+        const room = document.getElementById('schedule-room').value;
+        await FITEBOX.post('/api/schedule/set_room', { room });
+        if (room) FITEBOX.toast('Room: ' + room, 'success');
+    }
+
+    async function refreshSession() {
+        const room = document.getElementById('schedule-room').value;
+        if (!room) {
+            FITEBOX.toast('Select a room first', 'error');
+            return;
+        }
+
+        // Allow the response to fill the inputs
+        document.getElementById('rec-author').dataset.userEdited = '';
+        document.getElementById('rec-title').dataset.userEdited = '';
+
+        FITEBOX.toast('Looking up session...', 'info');
+        await FITEBOX.post('/api/schedule/refresh');
+    }
+
+    // --- Talk Browser ---
+
+    async function browseTalks() {
+        const room = document.getElementById('schedule-room').value;
+        if (!room) {
+            FITEBOX.toast('Select a room first', 'error');
+            return;
+        }
+
+        document.getElementById('talk-modal').classList.remove('hidden');
+        document.getElementById('talk-modal-room').textContent = room;
+        document.getElementById('talk-tree').innerHTML =
+            '<div class="text-dim" style="text-align:center;padding:20px">Loading...</div>';
+
+        try {
+            const data = await FITEBOX.get('/api/schedule/all');
+            if (data.error) {
+                document.getElementById('talk-tree').innerHTML =
+                    `<div class="text-dim" style="text-align:center;padding:20px">${data.error}</div>`;
+                return;
+            }
+            renderTalkTree(data.days);
+        } catch (e) {
+            document.getElementById('talk-tree').innerHTML =
+                '<div class="text-dim" style="text-align:center;padding:20px">Failed to load</div>';
+        }
+    }
+
+    function renderTalkTree(days) {
+        const container = document.getElementById('talk-tree');
+        if (!days || days.length === 0) {
+            container.innerHTML =
+                '<div class="text-dim" style="text-align:center;padding:20px">No talks found</div>';
+            return;
+        }
+
+        let html = '';
+        days.forEach((day, di) => {
+            const isFirst = di === 0;
+            html += `<div class="tree-day">
+                <div class="tree-day-header${isFirst ? ' open' : ''}" onclick="toggleDay(this)">
+                    <span class="tree-arrow">${isFirst ? '▾' : '▸'}</span>
+                    <span class="tree-day-label">${day.label}</span>
+                    <span class="tree-day-count">${day.talks.length}</span>
+                </div>
+                <div class="tree-talks" style="${isFirst ? '' : 'display:none'}">`;
+
+            day.talks.forEach(talk => {
+                const startTime = (talk.start || '').substring(0, 5);
+                const authorShort = talk.author ? talk.author.substring(0, 30) : '';
+                const trackBadge = talk.track
+                    ? `<span class="tree-track">${talk.track}</span>` : '';
+
+                html += `<div class="tree-talk" onclick='selectTalk(${JSON.stringify(talk).replace(/'/g, "&#39;")})'>
+                    <div class="tree-talk-time">${startTime}</div>
+                    <div class="tree-talk-info">
+                        <div class="tree-talk-title">${talk.title}</div>
+                        <div class="tree-talk-author">${authorShort} ${trackBadge}</div>
+                    </div>
+                </div>`;
+            });
+
+            html += '</div></div>';
+        });
+
+        container.innerHTML = html;
+    }
+
+    function toggleDay(header) {
+        const talks = header.nextElementSibling;
+        const arrow = header.querySelector('.tree-arrow');
+        const isOpen = talks.style.display !== 'none';
+        talks.style.display = isOpen ? 'none' : 'block';
+        arrow.textContent = isOpen ? '▸' : '▾';
+        header.classList.toggle('open', !isOpen);
+    }
+
+    function selectTalk(talk) {
+        // Fill author/title fields
+        document.getElementById('rec-author').value = talk.author || '';
+        document.getElementById('rec-title').value = talk.title || '';
+
+        // Mark as not user-edited so it syncs properly
+        document.getElementById('rec-author').dataset.userEdited = '';
+        document.getElementById('rec-title').dataset.userEdited = '';
+
+        // Show session info
+        displaySession(talk);
+
+        // Send to manager to persist as current session
+        FITEBOX.post('/api/schedule/select', { session: talk });
+
+        // Close modal
+        closeTalkModal();
+        FITEBOX.toast(`Selected: ${talk.title}`, 'success');
+    }
+
+    function closeTalkModal() {
+        document.getElementById('talk-modal').classList.add('hidden');
+    }
+
+    // Close on overlay click
+    document.getElementById('talk-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeTalkModal();
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeTalkModal();
+            closeStreamModal();
+        }
+    });
+
+    // --- Status listener ---
+
+    let _dashWasRec = false;
+    let _dashWasRecording = false;  // tracks phase=recording specifically
+    const _dashKey = sessionStorage.getItem('fitebox_key') || '';
+    let _dashPreviewInterval = 15;
+    let _dashRecPrevActive = false;
+
+    let _btnStateGen = 0;  // generation counter to prevent stale timeout races
+    function _dashSetBtnState(btn, state, cooldownSec) {
+        const gen = ++_btnStateGen;
+        btn.classList.remove('loading', 'cooldown', 'ready');
+        const oldFill = btn.querySelector('.btn-fill');
+        if (oldFill) oldFill.remove();
+        btn.disabled = false;
+
+        if (state === 'loading') {
+            btn.classList.add('loading');
+            btn.disabled = true;
+        } else if (state === 'cooldown') {
+            btn.classList.add('cooldown');
+            btn.disabled = true;
+            const fill = document.createElement('span');
+            fill.className = 'btn-fill';
+            fill.style.width = '0%';
+            fill.style.transitionDuration = cooldownSec + 's';
+            btn.prepend(fill);
+            requestAnimationFrame(() => { fill.style.width = '100%'; });
+            setTimeout(() => {
+                if (_btnStateGen === gen && btn.classList.contains('cooldown')) _dashSetBtnState(btn, 'ready');
+            }, cooldownSec * 1000);
+        } else if (state === 'ready') {
+            btn.classList.add('ready');
+        }
+    }
+
+    function dashStartRecPreview(recTimeSec) {
+        _dashRecPrevActive = true;
+        const btn = document.getElementById('dash-btn-preview');
+        const warmup = 30;
+        const remaining = Math.max(0, warmup - (recTimeSec || 0));
+
+        if (remaining <= 0) {
+            // Recording already has enough data - fetch immediately
+            dashDoRefreshPreview();
+        } else {
+            // Wait for remaining warmup with live countdown
+            _dashSetBtnState(btn, 'cooldown', remaining);
+            const ph = document.getElementById('dash-thumb-ph');
+            let left = remaining;
+            ph.textContent = 'First preview in ' + left + 's...';
+            const cdt = setInterval(() => {
+                left--;
+                if (left <= 0) {
+                    clearInterval(cdt);
+                    ph.textContent = 'Loading preview...';
+                    if (_dashRecPrevActive) dashDoRefreshPreview();
+                } else {
+                    ph.textContent = 'First preview in ' + left + 's...';
+                }
+            }, 1000);
+        }
+    }
+
+    function dashStopRecPreview() {
+        _dashRecPrevActive = false;
+        const video = document.getElementById('dash-preview-video');
+        video.pause(); video.removeAttribute('src'); video.style.display = 'none';
+        document.getElementById('dash-thumb-ph').textContent = 'Waiting for first clip...';
+        document.getElementById('dash-thumb-ph').style.display = '';
+        const btn = document.getElementById('dash-btn-preview');
+        btn.classList.remove('loading', 'cooldown', 'ready');
+        btn.disabled = true;
+    }
+
+    async function dashDoRefreshPreview() {
+        if (!_dashRecPrevActive) return;
+        const btn = document.getElementById('dash-btn-preview');
+        _dashSetBtnState(btn, 'loading');
+
+        try {
+            const res = await FITEBOX.post('/api/recording/preview');
+            if (res.status === 'ok') {
+                const video = document.getElementById('dash-preview-video');
+                video.src = '/api/recording/preview?key=' + encodeURIComponent(_dashKey) + '&t=' + Date.now();
+                video.style.display = 'block';
+                document.getElementById('dash-thumb-ph').style.display = 'none';
+                video.load();
+            }
+        } catch(e) {}
+
+        _dashSetBtnState(btn, 'cooldown', _dashPreviewInterval);
+    }
+
+    // --- Recording health histogram (from ffmpeg log) ---
+    let _histoTimer = null;
+
+    function _histoGetInterval() {
+        return document.visibilityState === 'hidden' ? 30000 : 15000;
+    }
+
+    function _histoReset() {
+        if (_histoTimer) { clearTimeout(_histoTimer); _histoTimer = null; }
+        document.getElementById('rec-histogram').style.display = 'none';
+        document.getElementById('rec-histo-bar').innerHTML = '';
+        document.getElementById('rec-histo-label').innerHTML = '';
+    }
+
+    function _histoStart() {
+        if (_histoTimer) return;
+        _histoFetch();  // immediate first fetch
+    }
+
+    function _histoSchedule() {
+        if (_histoTimer) clearTimeout(_histoTimer);
+        _histoTimer = setTimeout(_histoFetch, _histoGetInterval());
+    }
+
+    async function _histoFetch() {
+        try {
+            const data = await FITEBOX.get('/api/recording/health');
+            if (data.status !== 'ok' || !data.buckets || data.buckets.length < 2) {
+                document.getElementById('rec-histogram').style.display = 'none';
+                _histoSchedule();
+                return;
+            }
+            _histoRender(data);
+        } catch(e) {}
+        _histoSchedule();
+    }
+
+    function _histoRender(data) {
+        const bar = document.getElementById('rec-histo-bar');
+        const label = document.getElementById('rec-histo-label');
+        const container = document.getElementById('rec-histogram');
+        container.style.display = '';
+
+        let html = '';
+        for (const b of data.buckets) {
+            html += '<span class="h-seg ' + b.s + '" style="flex:1;min-width:1px"></span>';
+        }
+        // Animated "recording in progress" tail (~10% of bar)
+        const tailFlex = Math.max(1, Math.ceil(data.buckets.length * 0.11));
+        html += '<span class="h-seg h-rec-tail" style="flex:' + tailFlex + ';min-width:4px"></span>';
+        bar.innerHTML = html;
+
+        // Label (floor seconds to avoid decimals)
+        const firstT = Math.floor(data.buckets[0].t || 0);
+        const lastT = Math.floor(data.buckets[data.buckets.length - 1].t || 0);
+        const sizeMB = ((data.last_size_kb || 0) / 1024).toFixed(0);
+        let labelHtml = '<span>' + FITEBOX.formatTime(firstT) + '</span>';
+        labelHtml += '<span>';
+        if (data.gaps > 0) {
+            labelHtml += '<span style="color:var(--red)">' + data.gaps + ' gap' + (data.gaps > 1 ? 's' : '') + '</span> &middot; ';
+        }
+        if (data.warns > 0) {
+            labelHtml += '<span style="color:#c90">' + data.warns + ' warn</span> &middot; ';
+        }
+        labelHtml += sizeMB + ' MB &middot; ' + FITEBOX.formatTime(lastT);
+        labelHtml += '</span>';
+        label.innerHTML = labelHtml;
+    }
+
+
+    // Persistent streaming state - WS messages from manager don't include
+    // streaming fields, so we track them separately and only update when present.
+    let _wsStreamActive = false;
+    let _wsStreamDraining = false;
+    let _wsStreamPhase = '';
+    let _wsStreamDest = '';
+
+    FITEBOX.onStatus((s) => {
+        // Update streaming state ONLY if present in this message
+        if ('streaming_active' in s) _wsStreamActive = !!s.streaming_active;
+        if ('streaming_draining' in s) _wsStreamDraining = !!s.streaming_draining;
+        if ('streaming_phase' in s) _wsStreamPhase = s.streaming_phase || '';
+        if ('streaming_dest' in s) _wsStreamDest = s.streaming_dest || '';
+        if ('streaming_active' in s && !s.streaming_active && !s.streaming_draining) {
+            _wsStreamActive = false;
+            _wsStreamDraining = false;
+            _wsStreamPhase = '';
+        }
+
+        const isRec = !!s.recording;
+
+        // Read refresh interval from server
+        if (s.preview_refresh_interval) _dashPreviewInterval = s.preview_refresh_interval;
+
+        document.getElementById('rec-idle').classList.toggle('hidden', isRec);
+        document.getElementById('rec-active').classList.toggle('hidden', !isRec);
+
+        // Reset start button if not recording (handles failed start)
+        // But keep blocked during streaming drain (outro still sending)
+        if (!isRec) {
+            const startBtn = document.getElementById('btn-start');
+            if (_wsStreamDraining || _wsStreamPhase === 'outro' || _wsStreamPhase === 'closing') {
+                startBtn.disabled = true;
+                startBtn.style.opacity = '0.5';
+            } else {
+                startBtn.disabled = false;
+                startBtn.style.opacity = '';
+            }
+        }
+
+        const badge = document.getElementById('rec-badge');
+        const phase = s.recording_phase || '';
+
+        if (isRec && (phase === 'recording' || phase === '')) {
+            badge.textContent = 'REC';
+            badge.className = 'status-badge recording';
+            document.getElementById('rec-timer').textContent = FITEBOX.formatTime(s.recording_time || 0);
+            document.getElementById('rec-author-display').textContent = s.recording_author || '';
+            document.getElementById('rec-title-display').textContent = s.recording_title || '';
+
+            if (!_dashWasRecording) {
+                dashStartRecPreview(s.recording_time || 0);
+            }
+            _dashWasRecording = true;
+
+            // Start recording health histogram polling
+            _histoStart();
+        } else if (isRec || (phase && phase !== 'failed')) {
+            const phaseLabels = {
+                'detecting': 'DETECTING HW',
+                'starting': 'STARTING...',
+            };
+            badge.textContent = phaseLabels[phase] || 'PREPARING...';
+            badge.className = 'status-badge warn';
+        } else if (phase === 'failed') {
+            badge.textContent = 'FAILED';
+            badge.className = 'status-badge danger';
+        } else {
+            badge.textContent = 'READY';
+            badge.className = 'status-badge ready';
+        }
+
+        if (!isRec && _dashWasRec) {
+            dashStopRecPreview();
+            _histoReset();
+            _dashWasRecording = false;
+        }
+        _dashWasRec = isRec;
+
+        // Streaming badge (uses persistent state vars, not s.* which may be absent)
+        const streamBadge = document.getElementById('stream-badge-dash');
+        if (_wsStreamActive || _wsStreamDraining) {
+            const icons = {
+                youtube: '<svg viewBox="0 0 24 24" fill="currentColor" style="width:10px;height:10px"><path d="M21.6 7.2s-.2-1.5-.8-2.1c-.8-.8-1.6-.8-2-.9C16 4 12 4 12 4s-4 0-6.8.2c-.4.1-1.2.1-2 .9-.6.6-.8 2.1-.8 2.1S2.2 9 2.2 10.8v1.4c0 1.8.2 3.6.2 3.6s.2 1.5.8 2.1c.8.8 1.8.8 2.2.9 1.6.1 6.6.2 6.6.2s4 0 6.8-.2c.4-.1 1.2-.1 2-.9.6-.6.8-2.1.8-2.1s.2-1.8.2-3.6v-1.4c0-1.8-.2-3.6-.2-3.6zM9.9 15.2V8.8l5.4 3.2-5.4 3.2z"/></svg>',
+                twitch: '<svg viewBox="0 0 24 24" fill="currentColor" style="width:10px;height:10px"><path d="M4.3 3L3 6.3v12.4h4.5V21h3l2.7-2.3h4.1L21 15V3H4.3zm14.4 11.2l-3 3H11l-2.7 2.3V17.2H5.3V5.3h13.4v8.9zM15 8.3v4.5h-2.3V8.3H15zm-5.3 0v4.5H7.5V8.3h2.2z"/></svg>',
+                custom: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:10px;height:10px"><path d="M5.6 18.4A9 9 0 0 1 3 12a9 9 0 0 1 2.6-6.4"/><path d="M18.4 5.6A9 9 0 0 1 21 12a9 9 0 0 1-2.6 6.4"/><path d="M8.5 15.5A5 5 0 0 1 7 12a5 5 0 0 1 1.5-3.5"/><path d="M15.5 8.5A5 5 0 0 1 17 12a5 5 0 0 1-1.5 3.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>',
+            };
+            const dest = _wsStreamDest || 'custom';
+            const phaseLabels = {waiting:'WAIT',buffering:'BUFFER',intro:'INTRO',live:'LIVE',draining:'FINISHING',outro:'OUTRO',closing:'CLOSING'};
+            const phaseText = phaseLabels[_wsStreamPhase] || 'STREAM';
+            document.getElementById('stream-badge-icon').innerHTML = icons[dest] || icons.custom;
+            const textEl = document.getElementById('stream-badge-text');
+            if (textEl) textEl.textContent = phaseText;
+            streamBadge.classList.remove('hidden');
+        } else {
+            streamBadge.classList.add('hidden');
+        }
+
+        // Stop button text - reflect streaming state
+        const stopBtn = document.getElementById('btn-stop');
+        if (_wsStreamDraining) {
+            stopBtn.innerHTML = '<span class="drain-spinner" style="width:12px;height:12px;border-width:1.5px;vertical-align:-2px;margin-right:4px"></span> Finishing stream...';
+            stopBtn.disabled = true;
+        } else if (_wsStreamActive && isRec) {
+            stopBtn.innerHTML = '&#9632; Stop Recording &amp; Streaming';
+            stopBtn.disabled = false;
+        } else if (isRec) {
+            stopBtn.innerHTML = '&#9632; Stop Recording';
+            stopBtn.disabled = false;
+        }
+
+        // Progress banner: show during intro, outro, draining, closing
+        const _progressPhases = ['intro', 'outro', 'draining', 'closing'];
+        if (_wsStreamDraining || _progressPhases.includes(_wsStreamPhase)) {
+            _showDrainBanner(true);
+            _startProgressPoll();
+        } else {
+            _showDrainBanner(false);
+        }
+
+        // Stats
+        const cpu = s.cpu || 0;
+        document.getElementById('stat-cpu').innerHTML = `${cpu}<span class="stat-unit">%</span>`;
+        const cpuBar = document.getElementById('bar-cpu');
+        cpuBar.style.width = `${cpu}%`;
+        cpuBar.className = `progress-bar-fill ${cpu > 80 ? 'red' : cpu > 60 ? 'yellow' : 'green'}`;
+
+        const temp = s.temp || 0;
+        const tempEl = document.getElementById('stat-temp');
+        tempEl.innerHTML = `${temp}<span class="stat-unit">°C</span>`;
+        tempEl.className = `stat-value ${temp > 75 ? 'danger' : temp > 60 ? 'warn' : ''}`;
+
+        const diskFree = s.disk_free_gb || 0;
+        const diskPct = s.disk || 0;
+        document.getElementById('stat-disk').innerHTML = `${diskFree}<span class="stat-unit">GB</span>`;
+        const diskBar = document.getElementById('bar-disk');
+        diskBar.style.width = `${diskPct}%`;
+        diskBar.className = `progress-bar-fill ${diskPct > 85 ? 'red' : diskPct > 70 ? 'yellow' : 'green'}`;
+
+        // Network info inline (from WS data)
+        const netInfoEl = document.getElementById('net-info-inline');
+        const ssid = s.ssid || '';
+        const ethIp = s.eth_ip || '';
+        const wlanIp = s.ip || '';
+        let netParts = [];
+        if (ssid) {
+            netParts.push('📶 ' + ssid + (wlanIp ? ' · ' + wlanIp : ''));
+        }
+        netParts.push('🔌 ' + (ethIp || 'not connected'));
+        netInfoEl.textContent = netParts.join('  ');
+
+        // Schedule session from WebSocket (only if user hasn't edited)
+        if (s.schedule_session) {
+            const aEdited = document.getElementById('rec-author').dataset.userEdited;
+            const tEdited = document.getElementById('rec-title').dataset.userEdited;
+            if (!aEdited && !tEdited) {
+                displaySession(s.schedule_session);
+            }
+        }
+
+        // Rooms update
+        if (s.schedule_rooms) {
+            populateRooms(s.schedule_rooms, s.schedule_room || '');
+        }
+
+        // Author/title sync (when not recording, don't override user edits during active typing)
+        if (!isRec && s.recording_author !== undefined) {
+            const authorInput = document.getElementById('rec-author');
+            if (document.activeElement !== authorInput && !authorInput.dataset.userEdited) {
+                authorInput.value = s.recording_author || '';
+            }
+        }
+        if (!isRec && s.recording_title !== undefined) {
+            const titleInput = document.getElementById('rec-title');
+            if (document.activeElement !== titleInput && !titleInput.dataset.userEdited) {
+                titleInput.value = s.recording_title || '';
+            }
+        }
+    });
+
+    // Track manual edits
+    document.getElementById('rec-author').addEventListener('input', function() { this.dataset.userEdited = '1'; });
+    document.getElementById('rec-title').addEventListener('input', function() { this.dataset.userEdited = '1'; });
+
+    // --- Recording ---
+
+    // === Streaming Modal State ===
+    let _smEnabled = false;
+    let _smDest = 'youtube';
+    let _smQuality = '1080p';
+    let _smValidated = false; // key has been validated OK
+    let _smValidating = false;
+
+    function toggleVis(inputId) {
+        const el = document.getElementById(inputId);
+        el.type = el.type === 'password' ? 'text' : 'password';
+    }
+
+    function openStreamModal() {
+        document.getElementById('stream-modal').classList.remove('hidden');
+    }
+    function closeStreamModal() {
+        document.getElementById('stream-modal').classList.add('hidden');
+        _updateStreamBtn();
+        _updateRecButton();
+    }
+
+    function onStreamToggle() {
+        // Legacy - no longer used (replaced by activate/deactivate buttons)
+    }
+
+    async function smActivate() {
+        // Validate first (this also saves config via /api/streaming/validate)
+        await validateStreamKey();
+        if (!_smValidated) {
+            FITEBOX.toast('Please enter a valid stream key first', 'error');
+            return;
+        }
+        _smEnabled = true;
+        try {
+            await FITEBOX.post('/api/streaming/toggle', { enabled: true });
+        } catch(e) {}
+        _updateActivateBtn();
+        _updateStreamBtn();
+        _updateRecButton();
+        FITEBOX.toast('Streaming activated', 'success');
+    }
+
+    async function smDeactivate() {
+        _smEnabled = false;
+        _smValidated = false;
+        try {
+            await FITEBOX.post('/api/streaming/clear');
+        } catch(e) {}
+        _updateActivateBtn();
+        _updateStreamBtn();
+        _updateRecButton();
+        FITEBOX.toast('Streaming deactivated', 'info');
+    }
+
+    function _updateActivateBtn() {
+        const actBtn = document.getElementById('sm-btn-activate');
+        const deactBtn = document.getElementById('sm-btn-deactivate');
+        const statusEl = document.getElementById('sm-active-status');
+        if (_smEnabled && _smValidated) {
+            actBtn.classList.add('hidden');
+            deactBtn.classList.remove('hidden');
+            statusEl.classList.remove('hidden');
+            const destNames = { youtube: 'YouTube', twitch: 'Twitch', custom: 'Custom RTMP' };
+            document.getElementById('sm-active-dest').textContent = destNames[_smDest] || _smDest;
+        } else {
+            actBtn.classList.remove('hidden');
+            deactBtn.classList.add('hidden');
+            statusEl.classList.add('hidden');
+        }
+    }
+
+    function smSelectDest(dest) {
+        _smDest = dest;
+        _smValidated = false;
+        document.querySelectorAll('.sm-tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('sm-tab-' + dest).classList.add('active');
+        ['youtube','twitch','custom'].forEach(d => {
+            document.getElementById('sm-cfg-' + d).classList.toggle('hidden', d !== dest);
+        });
+        document.getElementById('sm-validation').classList.add('hidden');
+        _updateStreamBtn();
+        _updateRecButton();
+    }
+
+    function smSelectQuality(card, q) {
+        _smQuality = q;
+        document.querySelectorAll('.sm-q-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        const descs = {
+            '1080p': 'Same quality as recording. No re-encoding - nearly zero extra CPU cost. Requires good upload bandwidth (5-8 Mbps).',
+            '720p': '<span style="color:var(--yellow)">Recommended.</span> Good balance of quality and bandwidth. Re-encodes to 720p - moderate CPU usage on RPi5.',
+            '480p': '<span style="color:var(--red)">Heavy CPU.</span> For poor connections only. Re-encodes to 480p - high CPU load, may affect recording stability on RPi4.',
+        };
+        document.getElementById('sm-q-desc').innerHTML = descs[q] || '';
+        _updateRecButton();
+    }    function _getStreamConfig() {
+        const cfg = { destination: _smDest, quality: _smQuality };
+        if (_smDest === 'youtube') {
+            cfg.rtmp_url = 'rtmp://a.rtmp.youtube.com/live2';
+            cfg.stream_key = document.getElementById('sm-yt-key').value.trim();
+        } else if (_smDest === 'twitch') {
+            cfg.rtmp_url = 'rtmp://live.twitch.tv/app';
+            cfg.stream_key = document.getElementById('sm-tw-key').value.trim();
+        } else {
+            cfg.rtmp_url = document.getElementById('sm-custom-url').value.trim();
+            cfg.stream_key = '';
+        }
+        return cfg;
+    }
+
+    function _showValidation(state, text) {
+        const el = document.getElementById('sm-validation');
+        const icon = document.getElementById('sm-val-icon');
+        const txt = document.getElementById('sm-val-text');
+        el.classList.remove('hidden', 'ok', 'error', 'checking');
+        el.classList.add(state);
+        icon.textContent = state === 'ok' ? '\u2713' : state === 'error' ? '\u2717' : '\u27F3';
+        txt.textContent = text;
+    }
+
+    async function validateStreamKey() {
+        const cfg = _getStreamConfig();
+        const hasKey = _smDest === 'custom' ? cfg.rtmp_url : cfg.stream_key;
+        if (!hasKey) {
+            _smValidated = false;
+            document.getElementById('sm-validation').classList.add('hidden');
+            _updateStreamBtn();
+            _updateRecButton();
+            return;
+        }
+
+        _smValidating = true;
+        _showValidation('checking', 'Validating...');
+        _updateRecButton();
+
+        try {
+            const res = await FITEBOX.post('/api/streaming/validate', cfg);
+            if (res.status === 'ok') {
+                _smValidated = true;
+                _showValidation('ok', 'Connection successful');
+            } else {
+                _smValidated = false;
+                _showValidation('error', res.message || 'Validation failed');
+            }
+        } catch (e) {
+            _smValidated = false;
+            _showValidation('error', 'Network error');
+        }
+        _smValidating = false;
+        _updateStreamBtn();
+        _updateRecButton();
+    }
+
+    function _updateStreamBtn() {
+        const dot = document.getElementById('sm-dot');
+        dot.className = 'sm-dot';
+        if (_smEnabled && _smValidated) {
+            dot.classList.add('ok');
+        } else if (_smEnabled) {
+            dot.classList.add('error');
+        }
+    }
+
+    function _updateRecButton() {
+        const btn = document.getElementById('btn-start');
+        const blocked = _smEnabled && !_smValidated;
+        btn.classList.toggle('blocked', blocked);
+        btn.title = blocked ? 'Configure and validate streaming first' : '';
+
+        if (_smEnabled) {
+            const icons = {
+                youtube: '<svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px;vertical-align:-1px"><path d="M21.6 7.2s-.2-1.5-.8-2.1c-.8-.8-1.6-.8-2-.9C16 4 12 4 12 4s-4 0-6.8.2c-.4.1-1.2.1-2 .9-.6.6-.8 2.1-.8 2.1S2.2 9 2.2 10.8v1.4c0 1.8.2 3.6.2 3.6s.2 1.5.8 2.1c.8.8 1.8.8 2.2.9 1.6.1 6.6.2 6.6.2s4 0 6.8-.2c.4-.1 1.2-.1 2-.9.6-.6.8-2.1.8-2.1s.2-1.8.2-3.6v-1.4c0-1.8-.2-3.6-.2-3.6zM9.9 15.2V8.8l5.4 3.2-5.4 3.2z"/></svg>',
+                twitch: '<svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px;vertical-align:-1px"><path d="M4.3 3L3 6.3v12.4h4.5V21h3l2.7-2.3h4.1L21 15V3H4.3zm14.4 11.2l-3 3H11l-2.7 2.3V17.2H5.3V5.3h13.4v8.9zM15 8.3v4.5h-2.3V8.3H15zm-5.3 0v4.5H7.5V8.3h2.2z"/></svg>',
+                custom: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:12px;height:12px;vertical-align:-1px"><path d="M5.6 18.4A9 9 0 0 1 3 12a9 9 0 0 1 2.6-6.4"/><path d="M18.4 5.6A9 9 0 0 1 21 12a9 9 0 0 1-2.6 6.4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>',
+            };
+            const icon = icons[_smDest] || icons.custom;
+            btn.innerHTML = '● Record + ' + icon + ' Stream <span class="rec-btn-quality">' + _smQuality + '</span>';
+        } else {
+            btn.innerHTML = '● Start Recording';
+        }
+        // Update ready message
+        const msg = document.getElementById('stream-ready-msg');
+        if (_smEnabled && _smValidated) {
+            msg.classList.remove('hidden');
+            const destNames = { youtube: 'YouTube', twitch: 'Twitch', custom: 'Custom RTMP' };
+            document.getElementById('stream-ready-dest').textContent = destNames[_smDest] || _smDest;
+        } else {
+            msg.classList.add('hidden');
+        }
+    }
+
+    // Load saved streaming config
+    (async () => {
+        try {
+            const cfg = await FITEBOX.get('/api/streaming/config');
+            if (cfg.destination) {
+                _smDest = cfg.destination;
+                smSelectDest(cfg.destination);
+            }
+            if (cfg.stream_key) {
+                if (cfg.destination === 'twitch') {
+                    document.getElementById('sm-tw-key').value = cfg.stream_key;
+                } else {
+                    document.getElementById('sm-yt-key').value = cfg.stream_key;
+                }
+            }
+            if (cfg.destination === 'custom' && cfg.rtmp_url) {
+                document.getElementById('sm-custom-url').value = cfg.rtmp_url;
+            }
+            if (cfg.quality) {
+                _smQuality = cfg.quality;
+                document.querySelectorAll('.sm-q-card').forEach(c => {
+                    c.classList.toggle('active', c.dataset.q === cfg.quality);
+                    if (c.dataset.q === cfg.quality) smSelectQuality(c, cfg.quality);
+                });
+            }
+            // Restore enabled + validated state
+            if (cfg.enabled && cfg.validated) {
+                _smEnabled = true;
+                _smValidated = true;
+                _showValidation('ok', 'Connection verified');
+                _updateActivateBtn();
+            }
+            _updateStreamBtn();
+            _updateRecButton();
+        } catch (e) {}
+    })();
+
+    async function startRecording() {
+        const btn = document.getElementById('btn-start');
+        if (btn.disabled) return;
+        if (_smEnabled && !_smValidated) {
+            FITEBOX.toast('Configure and validate streaming first', 'error');
+            return;
+        }
+
+        // Disable immediately to prevent double-click
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+
+        try {
+            const author = document.getElementById('rec-author').value.trim();
+            const title = document.getElementById('rec-title').value.trim();
+
+            if (author || title) {
+                await FITEBOX.post('/api/recording/title', { title, author });
+            }
+            // Stop hardware preview first (may be active on another tab)
+            try { await FITEBOX.post('/api/preview/stop'); } catch(e) {}
+
+            // Build request body
+            const body = {};
+            if (_smEnabled) {
+                body.streaming = true;
+                body.stream_config = _getStreamConfig();
+            }
+
+            const res = await FITEBOX.post('/api/recording/start', body);
+            if (res.status === 'ok') {
+                FITEBOX.toast(_smEnabled ? 'Recording + streaming started' : 'Recording started', 'success');
+            } else {
+                FITEBOX.toast(res.message || 'Failed', 'error');
+                btn.disabled = false;
+                btn.style.opacity = '';
+            }
+
+            document.getElementById('rec-author').dataset.userEdited = '';
+            document.getElementById('rec-title').dataset.userEdited = '';
+        } catch (e) {
+            btn.disabled = false;
+            btn.style.opacity = '';
+        }
+    }
+
+    async function stopRecording() {
+        const msg = _smEnabled ? 'Stop recording and streaming?' : 'Stop the current recording?';
+        const ok = await FITEBOX.confirm('Stop Recording', msg);
+        if (!ok) return;
+        const res = await FITEBOX.post('/api/recording/stop');
+
+        if (res.status === 'ok') {
+            if (res.streaming_draining) {
+                _showDrainBanner(true);
+                _startProgressPoll();
+            } else {
+                FITEBOX.toast('Recording stopped', 'success');
+            }
+        } else {
+            FITEBOX.toast(res.message || 'Error', 'error');
+        }
+    }
+
+    // === Streaming Progress Banner ===
+    let _progressPollId = null;
+
+    function _showDrainBanner(show) {
+        document.getElementById('drain-banner').classList.toggle('hidden', !show);
+        if (!show) {
+            document.getElementById('drain-progress-bar').style.width = '0%';
+            document.getElementById('drain-detail').textContent = '';
+            _stopProgressPoll();
+        }
+    }
+
+    function _formatBytes(bytes) {
+        if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
+        return bytes + ' B';
+    }
+
+    function _updateDrainProgress(data) {
+        const pct = data.percent || 0;
+        const phase = data.phase || '';
+        document.getElementById('drain-progress-bar').style.width = pct + '%';
+        const phaseLabels = {
+            intro: 'Sending intro...', outro: 'Sending outro...',
+            draining: 'Draining buffer...', closing: 'Closing stream...'
+        };
+        document.getElementById('drain-label').textContent = phaseLabels[phase] || 'Finishing stream...';
+        let detail = '';
+        if (data.position && data.total) {
+            detail = _formatBytes(data.position) + ' / ' + _formatBytes(data.total)
+                   + ' (' + Math.round(pct) + '%)';
+            if (data.remaining_mb > 0) {
+                detail += ' - ' + data.remaining_mb.toFixed(1) + ' MB remaining';
+            }
+        } else if (pct > 0) {
+            detail = Math.round(pct) + '%';
+        }
+        document.getElementById('drain-detail').textContent = detail;
+    }
+
+    function _startProgressPoll() {
+        if (_progressPollId) return; // already polling
+        _progressPollId = setInterval(async () => {
+            try {
+                const st = await FITEBOX.get('/api/streaming/progress');
+                if (st.active) {
+                    _updateDrainProgress(st);
+                } else if (!st.draining && !_wsStreamActive) {
+                    _showDrainBanner(false);
+                    _stopProgressPoll();
+                }
+            } catch(e) {}
+        }, 1000);
+    }
+
+    function _stopProgressPoll() {
+        if (_progressPollId) {
+            clearInterval(_progressPollId);
+            _progressPollId = null;
+        }
+    }
+
+    async function doReboot() {
+        const ok = await FITEBOX.confirm('Reboot System', 'The system will reboot.');
+        if (!ok) return;
+        await FITEBOX.post('/api/system/reboot');
+        FITEBOX.toast('Rebooting...', 'info');
+    }
+
+    async function doShutdown() {
+        const ok = await FITEBOX.confirm('Shutdown System', 'Physical access needed to restart.');
+        if (!ok) return;
+        await FITEBOX.post('/api/system/shutdown');
+        FITEBOX.toast('Shutting down...', 'info');
+    }
+
+    // === Unified Charts + Adaptive Polling ===
+    const CHART_HISTORY_LEN = 120;  // matches server ring buffer
+
+    // Chart data (restored from server history on load)
+    const cpuHistory = [];
+    const tempHistory = [];
+    const netHistory = { rx: [], tx: [] };  // combined wlan+eth
+
+    // --- Generic sparkline drawer ---
+    function drawSparkline(canvasId, series, opts) {
+        const c = document.getElementById(canvasId);
+        if (!c) return;
+        const ctx = c.getContext('2d');
+        const w = c.width, h = c.height, pad = 2;
+        const chartW = w - pad * 2, chartH = h - pad * 2;
+        ctx.clearRect(0, 0, w, h);
+
+        for (const s of series) {
+            if (s.data.length < 2) continue;
+            const len = s.data.length;
+            const maxVal = Math.max(s.max || 1, ...s.data) * 1.1;
+            const stepX = chartW / (CHART_HISTORY_LEN - 1);
+
+            // Fill area
+            if (s.fill) {
+                ctx.beginPath();
+                ctx.moveTo(pad + (CHART_HISTORY_LEN - len) * stepX, pad + chartH);
+                for (let i = 0; i < len; i++) {
+                    const x = pad + (CHART_HISTORY_LEN - len + i) * stepX;
+                    const y = pad + chartH - (s.data[i] / maxVal) * chartH;
+                    ctx.lineTo(x, y);
+                }
+                ctx.lineTo(pad + (CHART_HISTORY_LEN - 1) * stepX, pad + chartH);
+                ctx.closePath();
+                ctx.fillStyle = s.fill;
+                ctx.fill();
+            }
+
+            // Line
+            ctx.strokeStyle = s.color;
+            ctx.lineWidth = s.width || 1.5;
+            ctx.beginPath();
+            for (let i = 0; i < len; i++) {
+                const x = pad + (CHART_HISTORY_LEN - len + i) * stepX;
+                const y = pad + chartH - (s.data[i] / maxVal) * chartH;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // Scale label (top-right)
+        if (opts && opts.scaleLabel) {
+            ctx.fillStyle = '#5a7a9a';
+            ctx.font = '16px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(opts.scaleLabel, w - 4, 14);
+        }
+    }
+
+    function drawCpuChart() {
+        const cpuMax = Math.max(100, ...cpuHistory);
+        const tempMax = Math.max(85, ...tempHistory);
+        const maxLabel = cpuHistory.length > 0 ? cpuHistory[cpuHistory.length - 1] + '% / ' + tempHistory[tempHistory.length - 1] + '°C' : '';
+        document.getElementById('cpu-graph-label').textContent = maxLabel;
+        drawSparkline('chart-cpu', [
+            { data: cpuHistory, color: '#40c0e0', fill: 'rgba(64,192,224,0.12)', max: 100 },
+            { data: tempHistory, color: '#e07030', fill: 'rgba(224,112,48,0.08)', max: 85 },
+        ], { scaleLabel: '' });
+    }
+
+    function formatRate(bytesPerSec) {
+        if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+        if (bytesPerSec < 1048576) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+        return (bytesPerSec / 1048576).toFixed(1) + ' MB/s';
+    }
+
+    function drawNetChart() {
+        const lastRx = netHistory.rx.length > 0 ? netHistory.rx[netHistory.rx.length - 1] : 0;
+        const lastTx = netHistory.tx.length > 0 ? netHistory.tx[netHistory.tx.length - 1] : 0;
+        document.getElementById('net-rate-label').innerHTML =
+            '<span style="color:#e8a020">▼' + formatRate(lastRx) + '</span> ' +
+            '<span style="color:#e84040">▲' + formatRate(lastTx) + '</span>';
+
+        const allVals = [...netHistory.rx, ...netHistory.tx];
+        const maxNet = Math.max(1024, ...allVals) * 1.15;
+        drawSparkline('chart-net', [
+            { data: netHistory.rx, color: '#e8a020', fill: 'rgba(232,160,32,0.12)', max: maxNet },
+            { data: netHistory.tx, color: '#e84040', fill: 'rgba(232,64,64,0.10)', max: maxNet },
+        ], { scaleLabel: formatRate(maxNet / 1.15) });
+    }
+
+    function pushChartLimit(arr, val) {
+        arr.push(val);
+        if (arr.length > CHART_HISTORY_LEN) arr.shift();
+    }
+
+    // Hook into WS status for real-time chart updates
+    const NET_NOISE_THRESHOLD = 10240;  // 10 KB/s - below this is dashboard polling noise
+    FITEBOX.onStatus((s) => {
+        if (s.cpu !== undefined) {
+            pushChartLimit(cpuHistory, s.cpu || 0);
+            pushChartLimit(tempHistory, s.temp || 0);
+            drawCpuChart();
+        }
+        if (s.net_rates) {
+            const nr = s.net_rates;
+            const wl = nr.wlan0 || {};
+            const et = nr.eth0 || {};
+            // Combined: sum of all interfaces
+            let rxTotal = (wl.rx_rate || 0) + (et.rx_rate || 0);
+            let txTotal = (wl.tx_rate || 0) + (et.tx_rate || 0);
+            // Suppress noise - dashboard polls and WS keepalives create zigzag
+            if (rxTotal < NET_NOISE_THRESHOLD) rxTotal = 0;
+            if (txTotal < NET_NOISE_THRESHOLD) txTotal = 0;
+            pushChartLimit(netHistory.rx, rxTotal);
+            pushChartLimit(netHistory.tx, txTotal);
+            drawNetChart();
+        }
+    });
+
+    // --- WS metrics history: instant chart restore on connect/reconnect ---
+    FITEBOX.onMetricsHistory((msg) => {
+        if (msg.cpu_history && msg.cpu_history.length > 0 && cpuHistory.length === 0) {
+            for (const p of msg.cpu_history) {
+                cpuHistory.push(p.cpu || 0);
+                tempHistory.push(p.temp || 0);
+            }
+            drawCpuChart();
+        }
+        if (msg.net_history && msg.net_history.length > 0 && netHistory.rx.length === 0) {
+            for (const p of msg.net_history) {
+                let rx = (p.wlan_rx || 0) + (p.eth_rx || 0);
+                let tx = (p.wlan_tx || 0) + (p.eth_tx || 0);
+                if (rx < NET_NOISE_THRESHOLD) rx = 0;
+                if (tx < NET_NOISE_THRESHOLD) tx = 0;
+                netHistory.rx.push(rx);
+                netHistory.tx.push(tx);
+            }
+            drawNetChart();
+        }
+    });
+
+    // --- Unified dashboard polling (replaces separate /api/system/vitals) ---
+    let _dashPollId = null;
+
+    function _getDashPollInterval() {
+        const s = FITEBOX.getStatus();
+        const hidden = document.visibilityState === 'hidden';
+        if (s.recording) return hidden ? 30000 : 10000;
+        return hidden ? 30000 : 5000;
+    }
+
+    async function pollDashboard() {
+        try {
+            const v = await FITEBOX.get('/api/dashboard');
+
+            // Internet (ping)
+            const pingEl = document.getElementById('stat-ping');
+            if (v.ping_ms != null) {
+                pingEl.innerHTML = `${v.ping_ms}<span class="stat-unit">ms</span>`;
+                pingEl.className = `stat-value ${v.ping_ms > 200 ? 'danger' : v.ping_ms > 100 ? 'warn' : ''}`;
+            } else {
+                pingEl.innerHTML = `<span class="stat-unit">no internet</span>`;
+                pingEl.className = 'stat-value warn';
+            }
+
+            // Disk I/O
+            const ioR = v.io_read_kbs || 0;
+            const ioW = v.io_write_kbs || 0;
+            const fmtIO = (kb) => kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB/s' : Math.round(kb) + ' KB/s';
+            document.getElementById('stat-io').innerHTML =
+                `<span style="color:#e8a020">${fmtIO(ioR)}</span> R · <span style="color:#e84040">${fmtIO(ioW)}</span> W`;
+
+            // Rec time available
+            const recRemEl = document.getElementById('stat-rec-remaining');
+            if (v.rec_remaining_min != null) {
+                const hrs = Math.floor(v.rec_remaining_min / 60);
+                const mins = v.rec_remaining_min % 60;
+                const text = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+                const prefix = v.rec_measured ? '' : '~';
+                recRemEl.innerHTML = prefix + text;
+                recRemEl.className = `stat-value ${v.rec_remaining_min < 30 ? 'danger' : v.rec_remaining_min < 60 ? 'warn' : ''}`;
+            } else {
+                recRemEl.innerHTML = `<span class="stat-unit">--</span>`;
+                recRemEl.className = 'stat-value';
+            }
+
+            // Restore chart history from server (on first load)
+            if (cpuHistory.length === 0 && v.cpu_history && v.cpu_history.length > 0) {
+                for (const p of v.cpu_history) {
+                    cpuHistory.push(p.cpu || 0);
+                    tempHistory.push(p.temp || 0);
+                }
+                drawCpuChart();
+            }
+            if (netHistory.rx.length === 0 && v.net_history && v.net_history.length > 0) {
+                for (const p of v.net_history) {
+                    let rx = (p.wlan_rx || 0) + (p.eth_rx || 0);
+                    let tx = (p.wlan_tx || 0) + (p.eth_tx || 0);
+                    if (rx < NET_NOISE_THRESHOLD) rx = 0;
+                    if (tx < NET_NOISE_THRESHOLD) tx = 0;
+                    netHistory.rx.push(rx);
+                    netHistory.tx.push(tx);
+                }
+                drawNetChart();
+            }
+        } catch(e) {}
+
+        // Schedule next poll with adaptive interval
+        _scheduleDashPoll();
+    }
+
+    function _scheduleDashPoll() {
+        if (_dashPollId) clearTimeout(_dashPollId);
+        _dashPollId = setTimeout(pollDashboard, _getDashPollInterval());
+    }
+
+    // Adjust polling on visibility change
+    document.addEventListener('visibilitychange', () => {
+        _scheduleDashPoll();
+    });
+
+    // Initial poll
+    pollDashboard();
+</script>
+{% endblock %}

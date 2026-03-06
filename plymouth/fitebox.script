@@ -1,0 +1,61 @@
+// ==========================================
+//  FITEBOX UNIVERSAL UI SCRIPT - MANUAL RENDER
+// ==========================================
+
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
+
+// 1. Resources
+boot_image            = Image("img_boot.png");
+ready_image           = Image("img_ready.png");
+recording_image       = Image("img_recording.png");
+recording_start_image = Image("img_recording_start.png");
+recording_stop_image  = Image("img_recording_stop.png");
+shutdown_image        = Image("img_shutdown.png");
+off_image             = Image("img_off.png");
+failure_image         = Image("img_failure.png");
+
+// 2. Sprites
+bg_sprite = Sprite();
+bg_sprite.SetZ(10);
+
+// Usaremos un Sprite normal para el texto
+message_sprite = Sprite();
+message_sprite.SetZ(100); 
+
+// 3. Helper
+fun set_visual(the_image) {
+    message_sprite.SetImage(None); // Limpiar texto al cambiar fondo
+    bg_sprite.SetImage(the_image);
+    bg_sprite.SetX(Window.GetWidth()  / 2 - the_image.GetWidth()  / 2);
+    bg_sprite.SetY(Window.GetHeight() / 2 - the_image.GetHeight() / 2);
+}
+
+// 4. Init
+status = Plymouth.GetMode();
+if (status == "boot") { set_visual(boot_image); } 
+else { set_visual(shutdown_image); }
+
+// 5. MESSAGE ENGINE (The fix is here)
+fun message_callback (text) {
+    if (text == "boot") { set_visual(boot_image); }
+    else if (text == "ready") { set_visual(ready_image); }
+    else if (text == "recording") { set_visual(recording_image); }
+    else if (text == "recording_start") { set_visual(recording_start_image); }
+    else if (text == "recording_stop") { set_visual(recording_stop_image); }
+    else if (text == "shutdown") { set_visual(shutdown_image); }
+    else if (text == "off") { set_visual(off_image); }
+    else if (text == "failure") { set_visual(failure_image); }
+    else {
+        // Creamos una imagen de texto al vuelo. 
+        // El formato es: Image.Text(string, red, green, blue, alpha, font_name)
+        // Nota: Si esto falla, quita "DejaVu Sans" y deja solo los colores.
+        txt_img = Image.Text(text, 1, 1, 1, 1, "DejaVu Sans 32");
+        
+        message_sprite.SetImage(txt_img);
+        message_sprite.SetX(Window.GetWidth() / 2 - txt_img.GetWidth() / 2);
+        message_sprite.SetY(Window.GetHeight() * 0.80);
+    }
+}
+
+Plymouth.SetMessageFunction(message_callback);

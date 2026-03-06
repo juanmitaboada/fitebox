@@ -1,0 +1,1366 @@
+{% extends "base.html" %}
+{% set active_page = "system" %}
+{% block title %}FITEBOX - System{% endblock %}
+{% block page_title %}System{% endblock %}
+
+{% block content %}
+<div class="page-content">
+
+    <!-- === RECORDING ASSETS (intro, background, outro) === -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">Recording Assets</span>
+        </div>
+        <div class="assets-grid">
+            <!-- Intro Bumper -->
+            <div class="asset-col">
+                <div class="asset-preview video-preview" id="intro-preview" onclick="playBumper('intro')">
+                    <img id="intro-thumb" alt="Intro" style="display:none">
+                    <div class="sys-bg-badge" id="intro-badge" style="display:none"></div>
+                    <div class="asset-play-icon" id="intro-play-icon">&#9654;</div>
+                    <div class="asset-no-file" id="intro-empty">No intro</div>
+                </div>
+                <div class="asset-label">Intro Bumper</div>
+                <p class="asset-desc">Video played before recording starts. Shown as countdown or title card.</p>
+                <div class="asset-actions">
+                    <label class="btn btn-sm btn-primary" for="intro-file-input">Upload</label>
+                    <input type="file" id="intro-file-input" accept="video/*" style="display:none" onchange="uploadBumper('intro', this)">
+                </div>
+                <div id="intro-upload-status" class="asset-status"></div>
+            </div>
+
+            <!-- Background Image -->
+            <div class="asset-col">
+                <div class="asset-preview" id="bg-preview" onclick="previewBackground()">
+                    <img id="bg-thumb" alt="Background" style="display:none">
+                    <div class="sys-bg-badge">1920 &times; 1080</div>
+                    <div class="asset-no-file" id="bg-empty">No image</div>
+                </div>
+                <div class="asset-label">Background</div>
+                <p class="asset-desc">Recording overlay. Auto-resized to 1920&times;1080. Use transparent areas for webcam and HDMI.</p>
+                <div class="asset-actions">
+                    <label class="btn btn-sm btn-primary" for="bg-file-input">Upload</label>
+                    <input type="file" id="bg-file-input" accept="image/png,image/jpeg" style="display:none" onchange="uploadBackground(this)">
+                </div>
+                <div id="bg-upload-status" class="asset-status"></div>
+            </div>
+
+            <!-- Outro Bumper -->
+            <div class="asset-col">
+                <div class="asset-preview video-preview" id="outro-preview" onclick="playBumper('outro')">
+                    <img id="outro-thumb" alt="Outro" style="display:none">
+                    <div class="sys-bg-badge" id="outro-badge" style="display:none"></div>
+                    <div class="asset-play-icon" id="outro-play-icon">&#9654;</div>
+                    <div class="asset-no-file" id="outro-empty">No outro</div>
+                </div>
+                <div class="asset-label">Outro Bumper</div>
+                <p class="asset-desc">Video played after recording ends. Credits, logo or closing card.</p>
+                <div class="asset-actions">
+                    <label class="btn btn-sm btn-primary" for="outro-file-input">Upload</label>
+                    <input type="file" id="outro-file-input" accept="video/*" style="display:none" onchange="uploadBumper('outro', this)">
+                </div>
+                <div id="outro-upload-status" class="asset-status"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- === NETWORK === -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">Network</span>
+            <button class="btn btn-sm" onclick="loadNetInfo()" title="Refresh"
+                    style="width:32px;height:32px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0">&#8635;</button>
+        </div>
+        <div class="net-columns">
+            <!-- WiFi Column -->
+            <div class="net-col">
+                <div class="net-col-header">
+                    <span class="net-col-title">&#128246; WiFi</span>
+                    <label class="toggle-switch" title="Enable/Disable WiFi"><input type="checkbox" id="wifi-toggle" checked onchange="toggleDevice('wifi', this.checked)"><span class="toggle-slider"></span></label>
+                    <span class="net-badge disconnected" id="wifi-mode-badge">--</span>
+                </div>
+                <div id="wifi-body">
+                <div class="net-field">
+                    <span class="net-label">SSID</span>
+                    <input class="net-input" id="wifi-ssid" placeholder="Not connected">
+                    <button class="btn-icon" onclick="openWifiModal()" title="WiFi QR &amp; password" id="btn-wifi-qr">QR</button>
+                    <button class="btn-icon" onclick="scanWifi()" title="Scan networks">Scan</button>
+                </div>
+                <div id="wifi-scan-results" class="wifi-scan-list"></div>
+                <div class="net-field">
+                    <span class="net-label">Password</span>
+                    <input class="net-input" id="wifi-pass" type="password" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;">
+                    <button class="btn-icon" onclick="togglePassVis()" title="Show/hide" id="btn-pass-vis">&#128065;</button>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">Signal</span>
+                    <div class="signal-widget" id="wifi-signal-widget">
+                        <div class="signal-bars" id="wifi-signal-bars">
+                            <span class="bar bar-1"></span>
+                            <span class="bar bar-2"></span>
+                            <span class="bar bar-3"></span>
+                            <span class="bar bar-4"></span>
+                            <span class="bar bar-5"></span>
+                        </div>
+                        <span class="signal-pct" id="wifi-signal-pct">--%</span>
+                        <span class="signal-dbm" id="wifi-signal-dbm">--</span>
+                    </div>
+                </div>
+                <div class="net-sep"></div>
+                <div class="net-field">
+                    <span class="net-label">IP Mode</span>
+                    <select class="net-select" id="wifi-dhcp" onchange="toggleFields('wifi')">
+                        <option value="dhcp">DHCP</option>
+                        <option value="static">Static</option>
+                    </select>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">IP</span>
+                    <input class="net-input" id="wifi-ip" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">Netmask</span>
+                    <input class="net-input" id="wifi-mask" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">Gateway</span>
+                    <input class="net-input" id="wifi-gw" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">DNS</span>
+                    <input class="net-input" id="wifi-dns" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">MAC</span>
+                    <span class="net-value net-mac" id="wifi-mac">--</span>
+                </div>
+                <div class="net-actions">
+                    <button class="btn btn-sm btn-primary" onclick="connectWifi()">Connect</button>
+                    <button class="btn btn-sm" onclick="activateAdhoc()">Ad-Hoc</button>
+                    <button class="btn btn-sm" onclick="openQRScanner()" id="btn-scan-qr">&#128247; Scan QR</button>
+                </div>
+                </div>
+            </div>
+
+            <!-- Ethernet Column -->
+            <div class="net-col">
+                <div class="net-col-header">
+                    <span class="net-col-title">&#128268; Ethernet</span>
+                    <label class="toggle-switch" title="Enable/Disable Ethernet"><input type="checkbox" id="eth-toggle" checked onchange="toggleDevice('eth', this.checked)"><span class="toggle-slider"></span></label>
+                    <span class="net-badge disconnected" id="eth-badge">--</span>
+                </div>
+                <div id="eth-body">
+                <div class="net-sep" style="margin-top:0"></div>
+                <div class="net-field">
+                    <span class="net-label">IP Mode</span>
+                    <select class="net-select" id="eth-dhcp" onchange="toggleFields('eth')">
+                        <option value="dhcp">DHCP</option>
+                        <option value="static">Static</option>
+                    </select>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">IP</span>
+                    <input class="net-input" id="eth-ip" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">Netmask</span>
+                    <input class="net-input" id="eth-mask" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">Gateway</span>
+                    <input class="net-input" id="eth-gw" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">DNS</span>
+                    <input class="net-input" id="eth-dns" placeholder="--" disabled>
+                </div>
+                <div class="net-field">
+                    <span class="net-label">MAC</span>
+                    <span class="net-value net-mac" id="eth-mac">--</span>
+                </div>
+                <div class="net-actions">
+                    <button class="btn btn-sm btn-primary" onclick="applyEthernet()">Apply</button>
+                </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- === DIAGNOSTICS === -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">Diagnostics</span>
+        </div>
+        <p class="text-sm text-dim mb-8">Run hardware checks to verify all components are working correctly.</p>
+        <button class="btn btn-primary" onclick="openDiagnostics()">Run Full Diagnostic</button>
+    </div>
+</div>
+
+<!-- Media Preview Modal (bumper video / background image) -->
+<div id="media-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeMediaModal()">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:720px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.6);overflow:hidden">
+        <div class="modal-header">
+            <span class="card-title" id="media-modal-title">Preview</span>
+            <button class="modal-close" onclick="closeMediaModal()">&times;</button>
+        </div>
+        <div style="background:#000;position:relative">
+            <video id="media-video" controls preload="metadata"
+                   style="display:none;width:100%;max-height:70vh;outline:none"></video>
+            <img id="media-img" style="display:none;width:100%;max-height:70vh;object-fit:contain">
+        </div>
+    </div>
+</div>
+
+<!-- Bumper Conversion Modal -->
+<div id="convert-modal" class="modal-overlay hidden" onclick="if(event.target===this)dismissConvertModal()">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:420px;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.6);overflow:hidden">
+        <div class="modal-header">
+            <span class="card-title">Resolution Mismatch</span>
+            <button class="modal-close" onclick="dismissConvertModal()">&times;</button>
+        </div>
+        <div style="padding:16px">
+            <div id="convert-modal-body" style="font-size:0.8rem;color:var(--text);line-height:1.5"></div>
+            <div id="convert-modal-progress" style="display:none;margin-top:12px">
+                <div style="font-size:0.75rem;color:var(--cyan);font-family:var(--mono)">Converting...</div>
+                <div style="margin-top:6px;height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+                    <div id="convert-progress-bar" style="height:100%;background:var(--cyan);width:0%;animation:convertPulse 1.5s ease-in-out infinite"></div>
+                </div>
+            </div>
+            <div id="convert-modal-buttons" style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+                <button class="btn btn-sm" style="background:var(--border);color:var(--text)" onclick="dismissConvertModal()">Cancel &mdash; I'll re-upload</button>
+                <button class="btn btn-sm btn-primary" id="convert-modal-ok" onclick="confirmConvert()">Convert now</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- WiFi Info Modal (password + QR) -->
+<div id="wifi-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeWifiModal()">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:380px;overflow:hidden">
+        <div class="modal-header">
+            <span class="card-title" id="wifi-modal-title">WiFi</span>
+            <button class="modal-close" onclick="closeWifiModal()">&times;</button>
+        </div>
+        <div style="padding:16px;text-align:center">
+            <div id="wifi-qr-container" style="background:#fff;border-radius:8px;padding:16px;display:inline-block;margin-bottom:12px">
+                <div id="wifi-qr-img" style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:0.7rem">Loading...</div>
+            </div>
+            <div style="text-align:left;font-family:var(--mono);font-size:0.72rem">
+                <div style="margin-bottom:8px">
+                    <span style="color:var(--text-dim)">SSID</span><br>
+                    <span style="color:var(--green)" id="wifi-modal-ssid">--</span>
+                </div>
+                <div style="margin-bottom:8px">
+                    <span style="color:var(--text-dim)">Password</span><br>
+                    <span style="color:var(--text);user-select:all" id="wifi-modal-pass">--</span>
+                </div>
+                <div>
+                    <span style="color:var(--text-dim)">Mode</span><br>
+                    <span style="color:var(--text)" id="wifi-modal-mode">--</span>
+                </div>
+            </div>
+            <p style="margin-top:12px;font-size:0.6rem;color:var(--text-dim);font-family:var(--mono)">Scan this QR to connect a device to this WiFi network</p>
+        </div>
+    </div>
+</div>
+
+<!-- QR Scanner Modal -->
+<div id="qr-scanner-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeQRScanner()">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:380px;overflow:hidden">
+        <div class="modal-header">
+            <span class="card-title">Scan WiFi QR</span>
+            <button class="modal-close" onclick="closeQRScanner()">&times;</button>
+        </div>
+        <div style="padding:16px;text-align:center">
+            <video id="qr-video" autoplay playsinline style="width:100%;border-radius:8px;background:#000;display:none"></video>
+            <div id="qr-status" style="padding:30px 0;font-family:var(--mono);font-size:0.72rem;color:var(--text-dim)">Initializing camera...</div>
+            <button class="btn btn-sm" onclick="closeQRScanner()" style="margin-top:12px">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- === DIAGNOSTICS MODAL === -->
+<div id="diag-modal" class="diag-overlay hidden" onclick="if(event.target===this)closeDiagnostics()">
+    <div class="diag-box">
+        <div class="diag-header">
+            <span class="diag-title">System Diagnostics</span>
+            <button class="about-close" onclick="closeDiagnostics()">&times;</button>
+        </div>
+        <div class="diag-tabs" id="diag-tabs">
+            <button class="diag-tab active" onclick="switchDiagTab('system')">System</button>
+            <button class="diag-tab" onclick="switchDiagTab('video')">Video</button>
+            <button class="diag-tab" onclick="switchDiagTab('audio')">Audio</button>
+            <button class="diag-tab" onclick="switchDiagTab('oled')">OLED</button>
+            <button class="diag-tab" onclick="switchDiagTab('gpio')">GPIO</button>
+            <button class="diag-tab" onclick="switchDiagTab('network')">Network</button>
+        </div>
+        <div class="diag-content" id="diag-content">
+            <div class="diag-loading" id="diag-loading">
+                <div class="diag-spinner"></div>
+                <span>Running diagnostics...</span>
+            </div>
+            <pre class="diag-output" id="diag-output"></pre>
+        </div>
+        <div class="diag-footer">
+            <button class="btn btn-sm" onclick="copyDiagnostics()">Copy All</button>
+            <button class="btn btn-sm" onclick="rerunDiagTab()">Re-run</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    /* === Recording Assets Grid === */
+    .assets-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+    }
+    @media (max-width: 640px) {
+        .assets-grid { grid-template-columns: 1fr; }
+    }
+    .asset-col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    .asset-preview {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16/9;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--bg-surface);
+        cursor: pointer;
+        transition: border-color 0.15s;
+    }
+    .asset-preview:hover { border-color: var(--green); }
+    .asset-preview img {
+        width: 100%; height: 100%; object-fit: cover;
+    }
+    .asset-preview.video-preview { position: relative; }
+    .asset-play-icon {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        color: rgba(255,255,255,0.7);
+        background: rgba(0,0,0,0.2);
+        opacity: 0;
+        transition: opacity 0.15s;
+        pointer-events: none;
+    }
+    .asset-preview:hover .asset-play-icon { opacity: 1; }
+    .asset-no-file {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--mono);
+        font-size: 0.65rem;
+        color: var(--text-dim);
+    }
+    .sys-bg-badge {
+        position: absolute; bottom: 2px; right: 4px;
+        font-family: var(--mono); font-size: 0.5rem;
+        background: rgba(0,0,0,0.6); color: #fff;
+        padding: 1px 4px; border-radius: 3px;
+    }
+    .asset-label {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-top: 8px;
+        text-align: center;
+    }
+    .asset-desc {
+        font-size: 0.6rem;
+        color: var(--text-dim);
+        text-align: center;
+        margin-top: 4px;
+        line-height: 1.4;
+    }
+    .asset-actions {
+        margin-top: 8px;
+    }
+    .asset-status {
+        font-size: 0.6rem;
+        font-family: var(--mono);
+        margin-top: 4px;
+        text-align: center;
+    }
+
+    /* === Network Columns === */
+    .net-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+    @media (max-width: 640px) {
+        .net-columns { grid-template-columns: 1fr; }
+    }
+    .net-col {
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+    }
+    .net-col-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+    }
+    .net-col-title {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--text);
+    }
+    .net-badge {
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        padding: 2px 7px;
+        border-radius: 3px;
+        text-transform: uppercase;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    .net-badge.client { background: var(--green-dim); color: var(--green); }
+    .net-badge.adhoc { background: var(--yellow-dim); color: var(--yellow); }
+    .net-badge.connected { background: var(--green-dim); color: var(--green); }
+    .net-badge.disconnected { background: rgba(90,122,154,0.1); color: var(--text-dim); }
+
+    /* Toggle switch */
+    .toggle-switch {
+        position: relative; display: inline-block; width: 32px; height: 16px;
+        margin: 0 4px; flex-shrink: 0; cursor: pointer;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: var(--border); border-radius: 8px; transition: 0.2s;
+    }
+    .toggle-slider:before {
+        content: ""; position: absolute; height: 12px; width: 12px;
+        left: 2px; bottom: 2px; background: var(--text-dim);
+        border-radius: 50%; transition: 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: var(--green-dim); }
+    .toggle-switch input:checked + .toggle-slider:before {
+        transform: translateX(16px); background: var(--green);
+    }
+    .net-body-disabled {
+        opacity: 0.25; pointer-events: none; filter: grayscale(1);
+    }
+    /* Signal bars (mobile-style) */
+    .signal-widget { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
+    .signal-bars .bar {
+        width: 4px; background: var(--border); border-radius: 1px;
+        transition: background 0.3s;
+    }
+    .signal-bars .bar-1 { height: 4px; }
+    .signal-bars .bar-2 { height: 7px; }
+    .signal-bars .bar-3 { height: 10px; }
+    .signal-bars .bar-4 { height: 14px; }
+    .signal-bars .bar-5 { height: 18px; }
+    .signal-bars .bar.active { background: var(--green); }
+    .signal-bars .bar.weak { background: var(--yellow); }
+    .signal-bars .bar.bad { background: var(--red, #e74c3c); }
+    .signal-pct { font-size: 13px; font-weight: 600; color: var(--text); min-width: 32px; }
+    .signal-dbm { font-size: 11px; color: var(--text-dim); }
+    /* WiFi scan known/forget */
+    .wifi-scan-item .btn-forget {
+        font-size: 0.55rem; padding: 1px 5px; border-radius: 3px;
+        background: rgba(232,64,64,0.15); color: var(--red, #e74c3c);
+        border: 1px solid rgba(232,64,64,0.3); cursor: pointer;
+        margin-left: 4px; flex-shrink: 0;
+    }
+    .wifi-scan-item .btn-forget:hover { background: rgba(232,64,64,0.3); }
+    .wifi-scan-item .known-star { color: var(--yellow, #e8a020); margin-right: 2px; }
+    /* Bumper badge match/mismatch */
+    .sys-bg-badge.match { background: rgba(39,174,96,0.2); color: var(--green, #27ae60); }
+    .sys-bg-badge.mismatch { background: rgba(232,160,32,0.2); color: var(--yellow, #e8a020); }
+    @keyframes convertPulse {
+        0%, 100% { width: 20%; }
+        50% { width: 80%; }
+    }
+
+    .net-field {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 5px;
+    }
+    .net-label {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        color: var(--text-dim);
+        width: 58px;
+        flex-shrink: 0;
+    }
+    .net-input {
+        flex: 1;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        padding: 4px 8px;
+        min-width: 0;
+    }
+    .net-input:focus { border-color: var(--border-focus); outline: none; }
+    .net-input:disabled { opacity: 0.5; cursor: default; }
+    .net-select {
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 0.65rem;
+        padding: 3px 6px;
+    }
+    .net-value {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--text);
+    }
+    .net-mac { font-size: 0.6rem; color: var(--text-dim); }
+    .net-sep {
+        border-top: 1px solid var(--border);
+        margin: 8px 0;
+    }
+    .net-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+    }
+    .btn-icon {
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        padding: 3px 6px;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: all 0.15s;
+    }
+    .btn-icon:hover { border-color: var(--green); color: var(--green); }
+
+    .wifi-scan-list {
+        max-height: 120px;
+        overflow-y: auto;
+    }
+    .wifi-scan-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 8px;
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        cursor: pointer;
+        border-radius: 3px;
+    }
+    .wifi-scan-item:hover { background: var(--bg-input); color: var(--green); }
+
+    /* === Diagnostics Modal === */
+    .diag-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1000; padding: 16px;
+    }
+    .diag-overlay.hidden { display: none; }
+    .diag-box {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 12px; width: 100%; max-width: 720px;
+        max-height: 85vh; display: flex; flex-direction: column;
+        overflow: hidden;
+    }
+    .diag-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .diag-title {
+        font-family: var(--mono); font-size: 1rem; font-weight: 700;
+        color: var(--green);
+    }
+    .diag-tabs {
+        display: flex; overflow-x: auto; scrollbar-width: none;
+        border-bottom: 1px solid var(--border);
+        padding: 0 8px;
+    }
+    .diag-tabs::-webkit-scrollbar { display: none; }
+    .diag-tab {
+        background: none; border: none; color: var(--text-dim);
+        font-family: var(--mono); font-size: 0.72rem; font-weight: 600;
+        padding: 10px 14px; cursor: pointer; white-space: nowrap;
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+    }
+    .diag-tab:hover { color: var(--text); }
+    .diag-tab.active {
+        color: var(--green); border-bottom-color: var(--green);
+    }
+    .diag-content {
+        flex: 1; overflow-y: auto; padding: 12px 16px;
+        min-height: 200px; max-height: 55vh;
+    }
+    .diag-output {
+        font-family: var(--mono); font-size: 0.7rem;
+        color: var(--text); white-space: pre-wrap;
+        word-break: break-word; line-height: 1.5;
+        margin: 0;
+    }
+    .diag-output .ok { color: var(--green); }
+    .diag-output .err { color: var(--red); }
+    .diag-output .warn { color: var(--yellow, #e8a020); }
+    .diag-output .head { color: var(--cyan); font-weight: 700; }
+    .diag-loading {
+        display: flex; align-items: center; gap: 10px;
+        color: var(--text-dim); font-family: var(--mono); font-size: 0.75rem;
+        padding: 40px 0; justify-content: center;
+    }
+    .diag-loading.hidden { display: none; }
+    .diag-spinner {
+        width: 18px; height: 18px; border: 2px solid var(--border);
+        border-top-color: var(--green); border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .diag-footer {
+        display: flex; gap: 8px; padding: 10px 16px;
+        border-top: 1px solid var(--border); justify-content: flex-end;
+    }
+</style>
+
+<script>
+    if (!FITEBOX.isAuthenticated()) window.location.href = '/';
+
+    // === RECORDING ASSETS (background + bumpers) ===
+    const _authKey = sessionStorage.getItem('fitebox_key') || '';
+    function authUrl(path) { return path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(_authKey); }
+
+    // Background
+    const _bgThumb = document.getElementById('bg-thumb');
+    _bgThumb.onload = function() { this.style.display = ''; document.getElementById('bg-empty').style.display = 'none'; };
+    _bgThumb.onerror = function() { this.style.display = 'none'; document.getElementById('bg-empty').style.display = ''; };
+    _bgThumb.src = authUrl('/api/system/background') + '&t=' + Date.now();
+
+    // Bumper thumbnails
+    ['intro', 'outro'].forEach(which => {
+        const img = document.getElementById(which + '-thumb');
+        const play = document.getElementById(which + '-play-icon');
+        const empty = document.getElementById(which + '-empty');
+        img.onload = function() { this.style.display = ''; play.style.display = ''; empty.style.display = 'none'; };
+        img.onerror = function() { this.style.display = 'none'; play.style.display = 'none'; empty.style.display = ''; };
+        img.src = authUrl('/api/system/bumper/' + which + '/thumb') + '&t=' + Date.now();
+    });
+
+    async function uploadBackground(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const status = document.getElementById('bg-upload-status');
+        status.innerHTML = '<span style="color:var(--text-dim)">Uploading & resizing...</span>';
+        try {
+            const formData = new FormData();
+            formData.append('background', file);
+            const resp = await fetch(authUrl('/api/system/background'), { method: 'POST', body: formData });
+            if (!resp.ok) {
+                const ct = resp.headers.get('content-type') || '';
+                if (ct.includes('json')) {
+                    const err = await resp.json();
+                    status.innerHTML = '<span style="color:var(--red)">' + (err.detail || err.message || resp.status) + '</span>';
+                } else {
+                    status.innerHTML = '<span style="color:var(--red)">Server error ' + resp.status + (resp.status === 413 ? ' - file too large' : '') + '</span>';
+                }
+                input.value = '';
+                return;
+            }
+            const res = await resp.json();
+            if (res.status === 'ok') {
+                status.innerHTML = '<span style="color:var(--green)">&#10003; Updated</span>';
+                _bgThumb.src = authUrl('/api/system/background') + '&t=' + Date.now();
+            } else {
+                status.innerHTML = '<span style="color:var(--red)">' + (res.message || 'Failed') + '</span>';
+            }
+        } catch (e) {
+            status.innerHTML = '<span style="color:var(--red)">Error: ' + e.message + '</span>';
+        }
+        input.value = '';
+    }
+
+    // Load bumper resolution info
+    async function loadBumperInfo(which) {
+        try {
+            const resp = await fetch(authUrl('/api/system/bumper/' + which + '/info'));
+            const info = await resp.json();
+            const badge = document.getElementById(which + '-badge');
+            if (info.exists && info.width) {
+                badge.textContent = info.width + ' \u00d7 ' + info.height + ' \u00b7 ' + info.fps + 'fps \u00b7 ' + (info.codec || '?');
+                badge.className = 'sys-bg-badge ' + (info.matches ? 'match' : 'mismatch');
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        } catch(e) {}
+    }
+
+    // Load bumper info on page load
+    ['intro', 'outro'].forEach(which => loadBumperInfo(which));
+
+    // Convert modal state
+    let _convertWhich = null;
+    let _convertStatus = null;
+
+    function showConvertModal(which, src, tgt, statusEl) {
+        _convertWhich = which;
+        _convertStatus = statusEl;
+        const body = document.getElementById('convert-modal-body');
+        body.innerHTML =
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+            '  <span style="font-size:1.5rem">\u26a0\ufe0f</span>' +
+            '  <span>Your <b>' + which + '</b> video does not match the recording format.</span>' +
+            '</div>' +
+            '<table style="width:100%;font-size:0.72rem;font-family:var(--mono);border-collapse:collapse">' +
+            '<tr style="color:var(--text-dim)"><td></td><td style="padding:3px 8px">Uploaded</td><td style="padding:3px 8px">Required</td></tr>' +
+            '<tr><td style="padding:3px 8px;color:var(--text-dim)">Resolution</td>' +
+            '  <td style="padding:3px 8px;color:' + (src.width===tgt.width && src.height===tgt.height ? 'var(--green)' : 'var(--red)') + '">' + src.width + '\u00d7' + src.height + '</td>' +
+            '  <td style="padding:3px 8px;color:var(--text)">' + tgt.width + '\u00d7' + tgt.height + '</td></tr>' +
+            '<tr><td style="padding:3px 8px;color:var(--text-dim)">FPS</td>' +
+            '  <td style="padding:3px 8px;color:' + (src.fps===tgt.fps ? 'var(--green)' : 'var(--red)') + '">' + src.fps + '</td>' +
+            '  <td style="padding:3px 8px;color:var(--text)">' + tgt.fps + '</td></tr>' +
+            '<tr><td style="padding:3px 8px;color:var(--text-dim)">Codecs</td>' +
+            '  <td style="padding:3px 8px;color:' + (src.video_codec==='h264' && src.audio_codec==='aac' ? 'var(--green)' : 'var(--red)') + '">' + src.video_codec + '+' + src.audio_codec + '</td>' +
+            '  <td style="padding:3px 8px;color:var(--text)">h264+aac</td></tr>' +
+            '</table>';
+        document.getElementById('convert-modal-progress').style.display = 'none';
+        document.getElementById('convert-modal-buttons').style.display = 'flex';
+        document.getElementById('convert-modal').classList.remove('hidden');
+    }
+
+    async function confirmConvert() {
+        if (!_convertWhich) return;
+        document.getElementById('convert-modal-buttons').style.display = 'none';
+        document.getElementById('convert-modal-progress').style.display = 'block';
+        try {
+            const resp = await fetch(authUrl('/api/system/bumper/' + _convertWhich + '/convert'), { method: 'POST' });
+            const res = await resp.json();
+            if (res.status === 'ok') {
+                if (_convertStatus) _convertStatus.innerHTML = '<span style="color:var(--green)">&#10003; Converted & saved</span>';
+                document.getElementById(_convertWhich + '-thumb').src = authUrl('/api/system/bumper/' + _convertWhich + '/thumb') + '&t=' + Date.now();
+                loadBumperInfo(_convertWhich);
+            } else {
+                if (_convertStatus) _convertStatus.innerHTML = '<span style="color:var(--red)">' + (res.message || 'Conversion failed') + '</span>';
+            }
+        } catch(e) {
+            if (_convertStatus) _convertStatus.innerHTML = '<span style="color:var(--red)">Error: ' + e.message + '</span>';
+        }
+        document.getElementById('convert-modal').classList.add('hidden');
+        _convertWhich = null;
+        _convertStatus = null;
+    }
+
+    async function dismissConvertModal() {
+        if (_convertWhich) {
+            await fetch(authUrl('/api/system/bumper/' + _convertWhich + '/discard'), { method: 'POST' });
+            if (_convertStatus) _convertStatus.innerHTML = '<span style="color:var(--text-dim)">Upload cancelled. Re-upload in 1920\u00d71080.</span>';
+        }
+        document.getElementById('convert-modal').classList.add('hidden');
+        _convertWhich = null;
+        _convertStatus = null;
+    }
+
+    async function uploadBumper(which, input) {
+        const file = input.files[0];
+        if (!file) return;
+        const status = document.getElementById(which + '-upload-status');
+        status.innerHTML = '<span style="color:var(--text-dim)">Uploading & analyzing...</span>';
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const resp = await fetch(authUrl('/api/system/bumper/' + which), { method: 'POST', body: formData });
+            if (!resp.ok) {
+                const ct = resp.headers.get('content-type') || '';
+                if (ct.includes('json')) {
+                    const err = await resp.json();
+                    status.innerHTML = '<span style="color:var(--red)">' + (err.detail || err.message || resp.status) + '</span>';
+                } else {
+                    status.innerHTML = '<span style="color:var(--red)">Server error ' + resp.status + (resp.status === 413 ? ' \u2014 file too large (check nginx client_max_body_size)' : '') + '</span>';
+                }
+                input.value = '';
+                return;
+            }
+            const res = await resp.json();
+
+            if (res.status === 'needs_conversion') {
+                status.innerHTML = '';
+                showConvertModal(which, res.source, res.target, status);
+            } else if (res.status === 'ok') {
+                const extra = res.converted ? ' (converted)' : '';
+                status.innerHTML = '<span style="color:var(--green)">&#10003; Updated' + extra + '</span>';
+                document.getElementById(which + '-thumb').src = authUrl('/api/system/bumper/' + which + '/thumb') + '&t=' + Date.now();
+                loadBumperInfo(which);
+            } else {
+                status.innerHTML = '<span style="color:var(--red)">' + (res.message || 'Failed') + '</span>';
+            }
+        } catch (e) {
+            status.innerHTML = '<span style="color:var(--red)">Error: ' + e.message + '</span>';
+        }
+        input.value = '';
+    }
+    function playBumper(which) {
+        const title = which === 'intro' ? 'Intro Bumper' : 'Outro Bumper';
+        const video = document.getElementById('media-video');
+        const img = document.getElementById('media-img');
+        document.getElementById('media-modal-title').textContent = title;
+        img.style.display = 'none';
+        video.style.display = 'block';
+        video.src = authUrl('/api/system/bumper/' + which);
+        video.load();
+        video.play().catch(() => {});
+        document.getElementById('media-modal').classList.remove('hidden');
+    }
+
+    function previewBackground() {
+        const video = document.getElementById('media-video');
+        const img = document.getElementById('media-img');
+        document.getElementById('media-modal-title').textContent = 'Background';
+        video.style.display = 'none';
+        video.pause();
+        video.removeAttribute('src');
+        img.style.display = 'block';
+        img.src = authUrl('/api/system/background') + '&t=' + Date.now();
+        document.getElementById('media-modal').classList.remove('hidden');
+    }
+
+    function closeMediaModal() {
+        const video = document.getElementById('media-video');
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        document.getElementById('media-img').style.display = 'none';
+        document.getElementById('media-modal').classList.add('hidden');
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMediaModal();
+    });
+
+    // === NETWORK INFO ===
+    let _netInfo = null;
+
+    async function loadNetInfo() {
+        try {
+            _netInfo = await FITEBOX.get('/api/network/info');
+            populateNet(_netInfo);
+        } catch (e) {
+            console.error('Network info error:', e);
+        }
+    }
+
+    function populateNet(info) {
+        const w = info.wifi || {};
+        const e = info.ethernet || {};
+
+        // WiFi enabled state (suppress onchange during programmatic update)
+        const wifiEnabled = w.enabled !== false;
+        const wToggle = document.getElementById('wifi-toggle');
+        _suppressToggle = true;
+        wToggle.checked = wifiEnabled;
+        _suppressToggle = false;
+        const wBody = document.getElementById('wifi-body');
+        wBody.classList.toggle('net-body-disabled', !wifiEnabled);
+
+        // WiFi badge
+        const wBadge = document.getElementById('wifi-mode-badge');
+        if (!wifiEnabled) {
+            wBadge.textContent = 'Off';
+            wBadge.className = 'net-badge disconnected';
+        } else if (w.connected) {
+            const mode = (w.mode === 'adhoc') ? 'adhoc' : 'client';
+            wBadge.textContent = mode === 'adhoc' ? 'Ad-Hoc' : 'Client';
+            wBadge.className = 'net-badge ' + mode;
+        } else {
+            wBadge.textContent = 'Disconnected';
+            wBadge.className = 'net-badge disconnected';
+        }
+
+        document.getElementById('wifi-ssid').value = w.ssid || '';
+        // Don't overwrite password if user is typing
+        const passEl = document.getElementById('wifi-pass');
+        if (!passEl.matches(':focus') && !passEl.value) {
+            // Leave empty - password shows in modal
+        }
+        updateSelectedSignal();
+        document.getElementById('wifi-mac').textContent = w.mac || '--';
+
+        // WiFi IP fields
+        document.getElementById('wifi-dhcp').value = w.dhcp ? 'dhcp' : 'static';
+        setField('wifi-ip', w.ip);
+        setField('wifi-mask', w.netmask);
+        setField('wifi-gw', w.gateway);
+        setField('wifi-dns', w.dns);
+        toggleFields('wifi');
+
+        // Ethernet enabled state (suppress onchange)
+        const ethEnabled = e.enabled !== false;
+        const eToggle = document.getElementById('eth-toggle');
+        _suppressToggle = true;
+        eToggle.checked = ethEnabled;
+        _suppressToggle = false;
+        const eBody = document.getElementById('eth-body');
+        eBody.classList.toggle('net-body-disabled', !ethEnabled);
+
+        // Ethernet badge
+        const eBadge = document.getElementById('eth-badge');
+        if (!ethEnabled) {
+            eBadge.textContent = 'Off';
+            eBadge.className = 'net-badge disconnected';
+        } else if (e.connected) {
+            eBadge.textContent = 'Connected';
+            eBadge.className = 'net-badge connected';
+        } else {
+            eBadge.textContent = 'Disconnected';
+            eBadge.className = 'net-badge disconnected';
+        }
+        document.getElementById('eth-mac').textContent = e.mac || '--';
+
+        document.getElementById('eth-dhcp').value = e.dhcp ? 'dhcp' : 'static';
+        setField('eth-ip', e.ip);
+        setField('eth-mask', e.netmask);
+        setField('eth-gw', e.gateway);
+        setField('eth-dns', e.dns);
+        toggleFields('eth');
+    }
+
+    let _suppressToggle = false;
+
+    async function toggleDevice(device, enabled) {
+        if (_suppressToggle) return;
+        const body = document.getElementById(device + '-body');
+        const badge = document.getElementById(device === 'wifi' ? 'wifi-mode-badge' : 'eth-badge');
+        body.classList.toggle('net-body-disabled', !enabled);
+        badge.textContent = enabled ? '...' : 'Off';
+        badge.className = 'net-badge disconnected';
+        try {
+            const action = enabled ? 'enable' : 'disable';
+            await FITEBOX.post('/api/network/' + device + '/' + action);
+            // Refresh after a moment (device needs time to come up/down)
+            setTimeout(loadNetInfo, 2000);
+        } catch (e) {
+            console.error('Toggle device error:', e);
+            // Revert toggle on error
+            document.getElementById(device + '-toggle').checked = !enabled;
+            body.classList.toggle('net-body-disabled', enabled);
+            loadNetInfo();
+        }
+    }
+
+    function setField(id, val) {
+        const el = document.getElementById(id);
+        if (el && !el.matches(':focus')) {
+            el.value = val || '';
+            if (val) el.placeholder = val;
+        }
+    }
+
+    function toggleFields(prefix) {
+        const isDhcp = document.getElementById(prefix + '-dhcp').value === 'dhcp';
+        ['ip', 'mask', 'gw', 'dns'].forEach(f => {
+            document.getElementById(prefix + '-' + f).disabled = isDhcp;
+        });
+    }
+
+    function updateSignalBars(signalDbm, connected) {
+        const bars = document.querySelectorAll('#wifi-signal-bars .bar');
+        const pctEl = document.getElementById('wifi-signal-pct');
+        const dbmEl = document.getElementById('wifi-signal-dbm');
+        if (!connected || !signalDbm) {
+            bars.forEach(b => b.className = b.className.replace(/ active| weak| bad/g, ''));
+            pctEl.textContent = connected ? '--' : 'Off';
+            dbmEl.textContent = '';
+            return;
+        }
+        // dBm to percentage: -30=100%, -90=0%
+        const pct = Math.max(0, Math.min(100, Math.round((signalDbm + 90) * 100 / 60)));
+        const activeBars = Math.ceil(pct / 20); // 0-5 bars
+        const color = pct >= 60 ? 'active' : pct >= 30 ? 'weak' : 'bad';
+        bars.forEach((b, i) => {
+            b.className = b.className.replace(/ active| weak| bad/g, '');
+            if (i < activeBars) b.classList.add(color);
+        });
+        pctEl.textContent = pct + '%';
+        dbmEl.textContent = signalDbm + ' dBm';
+    }
+
+    function togglePassVis() {
+        const el = document.getElementById('wifi-pass');
+        el.type = el.type === 'password' ? 'text' : 'password';
+    }
+
+    // Load on page init + every 30s
+    loadNetInfo();
+    setInterval(loadNetInfo, 30000);
+
+    // Track last scan results for signal lookup
+    let _lastScanResults = [];
+
+    // Update signal bars based on selected SSID from scan data
+    function updateSelectedSignal() {
+        const ssid = (document.getElementById('wifi-ssid').value || '').trim();
+        if (!ssid) { updateSignalBars(0, false); return; }
+        // Check if it's the connected network - use live data
+        if (_netInfo && _netInfo.wifi && _netInfo.wifi.ssid === ssid && _netInfo.wifi.connected) {
+            updateSignalBars(_netInfo.wifi.signal, true);
+            return;
+        }
+        // Otherwise look up in last scan results
+        const match = _lastScanResults.find(n => n.ssid === ssid);
+        if (match && match.signal) {
+            // Scan signal is percentage, convert to dBm for updateSignalBars
+            const dbm = Math.round(match.signal * 0.6 - 90);
+            updateSignalBars(dbm, true);
+        } else {
+            updateSignalBars(0, false);
+        }
+    }
+
+    // Monitor SSID input changes
+    document.getElementById('wifi-ssid').addEventListener('input', updateSelectedSignal);
+
+    // Also update from websocket for connected network
+    if (typeof FITEBOX !== 'undefined' && FITEBOX.onStatus) {
+        FITEBOX.onStatus(function(s) {
+            const ssid = (document.getElementById('wifi-ssid').value || '').trim();
+            const connSsid = s.ssid || '';
+            if (ssid && ssid === connSsid && s.wifi_signal) {
+                updateSignalBars(s.wifi_signal, true);
+            }
+        });
+    }
+
+    // === WIFI CONNECT ===
+    async function connectWifi() {
+        const ssid = document.getElementById('wifi-ssid').value.trim();
+        if (!ssid) { FITEBOX.toast('Enter SSID', 'error'); return; }
+
+        const p = {
+            ssid: ssid,
+            password: document.getElementById('wifi-pass').value,
+            dhcp: document.getElementById('wifi-dhcp').value === 'dhcp'
+        };
+        if (!p.dhcp) {
+            p.ip = document.getElementById('wifi-ip').value;
+            p.netmask = document.getElementById('wifi-mask').value;
+            p.gateway = document.getElementById('wifi-gw').value;
+            p.dns = document.getElementById('wifi-dns').value;
+        }
+
+        const ok = await FITEBOX.confirm('Connect WiFi', 'Connect to "' + ssid + '"? May lose connection temporarily.');
+        if (!ok) return;
+
+        const res = await FITEBOX.post('/api/network/connect', p);
+        FITEBOX.toast(res.status === 'ok' ? 'Connecting...' : (res.message || 'Failed'), res.status === 'ok' ? 'success' : 'error');
+        // Refresh after a delay (connection takes a few seconds)
+        setTimeout(loadNetInfo, 5000);
+    }
+
+    // === ETHERNET APPLY ===
+    async function applyEthernet() {
+        const p = { dhcp: document.getElementById('eth-dhcp').value === 'dhcp' };
+        if (!p.dhcp) {
+            p.ip = document.getElementById('eth-ip').value;
+            p.netmask = document.getElementById('eth-mask').value;
+            p.gateway = document.getElementById('eth-gw').value;
+            p.dns = document.getElementById('eth-dns').value;
+        }
+        const res = await FITEBOX.post('/api/network/wired', p);
+        FITEBOX.toast(res.status === 'ok' ? 'Ethernet config applied' : (res.message || 'Failed'), res.status === 'ok' ? 'success' : 'error');
+        setTimeout(loadNetInfo, 3000);
+    }
+
+    // === AD-HOC ===
+    async function activateAdhoc() {
+        const ok = await FITEBOX.confirm('Activate Ad-Hoc', 'This will disconnect from the current network. SSID and password will appear on the OLED screen.');
+        if (!ok) return;
+        const res = await FITEBOX.post('/api/network/adhoc');
+        FITEBOX.toast(res.status === 'ok' ? 'Ad-Hoc activated - check OLED' : (res.message || 'Failed'), res.status === 'ok' ? 'success' : 'error');
+        setTimeout(loadNetInfo, 5000);
+    }
+
+    // === WIFI SCAN ===
+    async function scanWifi() {
+        const c = document.getElementById('wifi-scan-results');
+        c.innerHTML = '<div style="padding:6px 8px;font-family:var(--mono);font-size:0.6rem;color:var(--text-dim)">Scanning...</div>';
+
+        // Fetch scan + known in parallel
+        const [scanRes, knownRes] = await Promise.all([
+            FITEBOX.post('/api/network/scan'),
+            FITEBOX.get('/api/network/known'),
+        ]);
+
+        const networks = (scanRes.networks || []);
+        const knownNames = new Set((knownRes.networks || []).map(n => n.name));
+        _lastScanResults = networks;  // Store for signal lookup
+
+        if (networks.length > 0) {
+            c.innerHTML = networks.map(n => {
+                const isKnown = knownNames.has(n.ssid);
+                const star = isKnown ? '<span class="known-star">★</span>' : '';
+                const forgetBtn = isKnown
+                    ? ' <button class="btn-forget" onclick="event.stopPropagation();forgetNetwork(\'' + n.ssid.replace(/'/g, "\\'") + '\')">Forget</button>'
+                    : '';
+                const clickFn = isKnown ? 'selectKnownResult' : 'selectScanResult';
+                return '<div class="wifi-scan-item" onclick="' + clickFn + '(\'' + n.ssid.replace(/'/g, "\\'") + '\')">' +
+                    '<span>' + star + n.ssid + '</span>' +
+                    '<span style="color:var(--text-dim);display:flex;align-items:center;gap:4px">' +
+                    (n.signal || '') + '% ' + (n.security || '') +
+                    forgetBtn + '</span></div>';
+            }).join('');
+        } else {
+            c.innerHTML = '<div style="padding:6px 8px;font-family:var(--mono);font-size:0.6rem;color:var(--text-dim)">No networks found. Try again.</div>';
+        }
+        updateSelectedSignal();
+    }
+
+    function selectScanResult(ssid) {
+        document.getElementById('wifi-ssid').value = ssid;
+        document.getElementById('wifi-pass').value = '';
+        document.getElementById('wifi-pass').focus();
+        document.getElementById('wifi-scan-results').innerHTML = '';
+        updateSelectedSignal();
+    }
+
+    async function selectKnownResult(ssid) {
+        // Fetch saved config and fill form
+        document.getElementById('wifi-scan-results').innerHTML =
+            '<div style="padding:6px 8px;font-family:var(--mono);font-size:0.6rem;color:var(--text-dim)">Loading config...</div>';
+        try {
+            const detail = await FITEBOX.get('/api/network/known/' + encodeURIComponent(ssid));
+            document.getElementById('wifi-ssid').value = detail.ssid || ssid;
+            document.getElementById('wifi-pass').value = detail.password || '';
+            document.getElementById('wifi-dhcp').value = detail.dhcp ? 'dhcp' : 'static';
+            toggleFields('wifi');
+            if (!detail.dhcp) {
+                setField('wifi-ip', detail.ip || '');
+                setField('wifi-mask', detail.netmask || '');
+                setField('wifi-gw', detail.gateway || '');
+                setField('wifi-dns', detail.dns || '');
+            }
+            document.getElementById('wifi-scan-results').innerHTML = '';
+            updateSelectedSignal();
+        } catch(e) {
+            document.getElementById('wifi-scan-results').innerHTML = '';
+            FITEBOX.toast('Error loading config', 'error');
+        }
+    }
+
+    async function forgetNetwork(ssid) {
+        const ok = await FITEBOX.confirm('Forget Network', 'Remove saved network "' + ssid + '"? You will need to enter the password again to reconnect.');
+        if (!ok) return;
+        try {
+            await FITEBOX.post('/api/network/forget', { connection: ssid });
+            FITEBOX.toast('Forgot ' + ssid);
+            scanWifi();  // Refresh list
+        } catch(e) {
+            FITEBOX.toast('Failed to forget network', 'error');
+        }
+    }
+
+    // === WIFI INFO MODAL (password + QR) ===
+    function openWifiModal() {
+        if (!_netInfo || !_netInfo.wifi.ssid) {
+            FITEBOX.toast('No WiFi connection', 'error');
+            return;
+        }
+        const w = _netInfo.wifi;
+        document.getElementById('wifi-modal-title').textContent = w.ssid;
+        document.getElementById('wifi-modal-ssid').textContent = w.ssid;
+        document.getElementById('wifi-modal-pass').textContent = w.password || '(none)';
+        document.getElementById('wifi-modal-mode').textContent = w.mode === 'adhoc' ? 'Ad-Hoc (Hotspot)' : 'Client (Infrastructure)';
+
+        // Load QR
+        const qrImg = document.getElementById('wifi-qr-img');
+        qrImg.innerHTML = '<div style="color:#999;font-size:0.7rem">Loading QR...</div>';
+        const img = new Image();
+        img.onload = () => { qrImg.innerHTML = ''; qrImg.appendChild(img); };
+        img.onerror = () => { qrImg.innerHTML = '<div style="color:#999;font-size:0.65rem">QR not available</div>'; };
+        img.src = authUrl('/api/network/wifi-qr');
+        img.style.width = '100%';
+        img.style.height = '100%';
+
+        document.getElementById('wifi-modal').classList.remove('hidden');
+    }
+
+    function closeWifiModal() {
+        document.getElementById('wifi-modal').classList.add('hidden');
+    }
+
+    // === QR SCANNER (camera) ===
+    let _qrStream = null;
+    let _qrAnimFrame = null;
+
+    async function openQRScanner() {
+        if (!('BarcodeDetector' in window)) {
+            FITEBOX.toast('QR scanning not supported in this browser', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('qr-scanner-modal');
+        const video = document.getElementById('qr-video');
+        const status = document.getElementById('qr-status');
+
+        modal.classList.remove('hidden');
+        status.textContent = 'Initializing camera...';
+        video.style.display = 'none';
+
+        try {
+            _qrStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+            });
+            video.srcObject = _qrStream;
+            await video.play();
+            video.style.display = 'block';
+            status.textContent = 'Point camera at a WiFi QR code...';
+
+            const detector = new BarcodeDetector({ formats: ['qr_code'] });
+
+            const scanLoop = async () => {
+                try {
+                    const barcodes = await detector.detect(video);
+                    if (barcodes.length > 0) {
+                        const raw = barcodes[0].rawValue;
+                        if (raw.startsWith('WIFI:')) {
+                            parseWifiQR(raw);
+                            closeQRScanner();
+                            return;
+                        }
+                    }
+                } catch (e) {}
+                _qrAnimFrame = requestAnimationFrame(scanLoop);
+            };
+            scanLoop();
+
+        } catch (e) {
+            status.textContent = 'Camera error: ' + (e.message || e);
+            console.error('QR scanner error:', e);
+        }
+    }
+
+    function closeQRScanner() {
+        if (_qrAnimFrame) { cancelAnimationFrame(_qrAnimFrame); _qrAnimFrame = null; }
+        if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
+        document.getElementById('qr-video').srcObject = null;
+        document.getElementById('qr-scanner-modal').classList.add('hidden');
+    }
+
+    function parseWifiQR(raw) {
+        // Format: WIFI:T:WPA;S:ssid;P:password;;
+        const params = {};
+        const body = raw.replace(/^WIFI:/, '').replace(/;;\s*$/, '');
+        for (const part of body.split(';')) {
+            const [k, ...rest] = part.split(':');
+            if (k && rest.length) {
+                const val = rest.join(':').replace(/\\(.)/g, '$1');  // unescape
+                params[k] = val;
+            }
+        }
+        if (params.S) {
+            document.getElementById('wifi-ssid').value = params.S;
+            document.getElementById('wifi-pass').value = params.P || '';
+            FITEBOX.toast('WiFi QR scanned: ' + params.S, 'success');
+        }
+    }
+
+    // === DIAGNOSTICS ===
+    let diagResults = {};
+    let currentDiagTab = 'system';
+    const DIAG_TABS = ['system', 'video', 'audio', 'oled', 'gpio', 'network'];
+
+    function openDiagnostics() {
+        document.getElementById('diag-modal').classList.remove('hidden');
+        diagResults = {};
+        runAllDiagnostics();
+    }
+
+    function closeDiagnostics() {
+        document.getElementById('diag-modal').classList.add('hidden');
+    }
+
+    async function runAllDiagnostics() {
+        for (const tab of DIAG_TABS) { runDiagnostic(tab); }
+    }
+
+    async function runDiagnostic(type) {
+        diagResults[type] = null;
+        if (type === currentDiagTab) renderDiagTab();
+        try {
+            const res = await FITEBOX.post('/api/system/diagnostic', { type: type });
+            diagResults[type] = res.output || res.message || 'No output';
+        } catch (e) {
+            diagResults[type] = 'ERROR: ' + e.message;
+        }
+        if (type === currentDiagTab) renderDiagTab();
+    }
+
+    function switchDiagTab(tab) {
+        currentDiagTab = tab;
+        document.querySelectorAll('.diag-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.diag-tab[onclick*="' + tab + '"]').classList.add('active');
+        renderDiagTab();
+    }
+
+    function renderDiagTab() {
+        const loading = document.getElementById('diag-loading');
+        const output = document.getElementById('diag-output');
+        const result = diagResults[currentDiagTab];
+        if (result === null || result === undefined) {
+            loading.classList.remove('hidden');
+            output.style.display = 'none';
+        } else {
+            loading.classList.add('hidden');
+            output.style.display = '';
+            output.innerHTML = colorize(result);
+        }
+    }
+
+    function colorize(text) {
+        return text
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/^(.*✅.*)$/gm, '<span class="ok">$1</span>')
+            .replace(/^(.*❌.*)$/gm, '<span class="err">$1</span>')
+            .replace(/^(.*⚠️.*)$/gm, '<span class="warn">$1</span>')
+            .replace(/^(.*FAIL.*)$/gm, '<span class="err">$1</span>')
+            .replace(/^(.*ERROR.*)$/gm, '<span class="err">$1</span>')
+            .replace(/^(---.*---)$/gm, '<span class="head">$1</span>')
+            .replace(/^(===.*===)$/gm, '<span class="head">$1</span>');
+    }
+
+    function rerunDiagTab() { runDiagnostic(currentDiagTab); }
+
+    function copyDiagnostics() {
+        let full = '';
+        for (const tab of DIAG_TABS) {
+            full += '=== ' + tab.toUpperCase() + ' ===\n';
+            full += (diagResults[tab] || '(not run)') + '\n\n';
+        }
+        navigator.clipboard.writeText(full).then(() => {
+            FITEBOX.toast('Diagnostics copied', 'success');
+        }).catch(() => {
+            FITEBOX.toast('Copy failed - try manually', 'info');
+        });
+    }
+</script>
+{% endblock %}

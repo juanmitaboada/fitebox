@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Fitebox
+Description=Fitebox Theme
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/fitebox
+ScriptFile=/usr/share/plymouth/themes/fitebox/fitebox.script

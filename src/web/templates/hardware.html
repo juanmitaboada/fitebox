@@ -1,0 +1,685 @@
+{% extends "base.html" %}
+{% set active_page = "hardware" %}
+{% block title %}FITEBOX - Hardware{% endblock %}
+{% block page_title %}Hardware Preview{% endblock %}
+
+{% block content %}
+<div class="page-content">
+
+    <!-- === HARDWARE PREVIEW === -->
+    <div class="card" id="preview-card" style="position:relative">
+        <!-- Recording overlay (gray out) -->
+        <div class="hw-rec-overlay hidden" id="hw-rec-overlay">
+            <span class="status-badge recording">REC</span>
+            <span class="hw-rec-msg">Hardware preview unavailable during recording</span>
+        </div>
+
+        <div class="card-header">
+            <span class="card-title">Hardware Preview</span>
+            <span class="text-dim text-xs" id="hw-status-text">Detecting...</span>
+        </div>
+
+        <!-- Cameras -->
+        <div class="pv-cameras hidden" id="pv-cameras">
+            <div class="pv-cam-slot">
+                <div class="pv-cam-label">HDMI Capture</div>
+                <div class="pv-cam-frame" id="pv-frame-hdmi">
+                    <div class="pv-cam-placeholder" id="pv-ph-hdmi">Connecting...</div>
+                    <img id="pv-img-hdmi" alt="HDMI">
+                </div>
+            </div>
+            <div class="pv-cam-slot pv-cam-small">
+                <div class="pv-cam-label">Webcam</div>
+                <div class="pv-cam-frame" id="pv-frame-cam">
+                    <div class="pv-cam-placeholder" id="pv-ph-cam">Connecting...</div>
+                    <img id="pv-img-cam" alt="Webcam">
+                </div>
+            </div>
+        </div>
+
+        <!-- Audio meters -->
+        <div class="pv-audio hidden" id="pv-audio" style="position:relative">
+            <!-- Activation overlay (grays out audio until user clicks) -->
+            <div class="pv-audio-blocked" id="pv-audio-blocked" onclick="activateAudio()">
+                <span>Tap here to enable audio monitoring</span>
+            </div>
+            <div class="pv-audio-hdr">
+                <span>Audio Devices</span>
+                <div class="pv-audio-actions">
+                    <button class="btn btn-sm" id="btn-refresh-hw" onclick="refreshHardware()" title="Re-detect all devices">&#8635; Refresh Hardware</button>
+                    <button class="pv-filter-btn active" id="btn-filter" onclick="toggleFilter()" title="Band-pass 80Hz–3.5kHz + Noise gate -45dB">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+                        <span style="font-family:var(--mono);font-size:0.6rem;margin-left:2px">80Hz–3.5kHz + Gate</span>
+                    </button>
+                    <button class="pv-speaker active" id="btn-master-mute" onclick="toggleMasterMute()" title="Mute/unmute all">
+                        <svg class="spk-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+                        <svg class="spk-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div id="pv-meters"></div>
+            <div class="pv-audio-legend">&#9654; selected for recording mix</div>
+        </div>
+    </div>
+
+    <!-- === RECORDING CONTROLS === -->
+    <div class="card" id="rec-card">
+        <div class="card-header">
+            <span class="card-title">Recording</span>
+            <span class="status-badge ready" id="hw-rec-badge">READY</span>
+        </div>
+        <div id="hw-session-info" class="hw-session-info" style="display:none">
+            <div class="hw-session-title" id="hw-session-title"></div>
+            <div class="hw-session-author" id="hw-session-author"></div>
+        </div>
+        <div class="flex justify-between items-center">
+            <span class="text-mono" id="hw-rec-timer">--:--:--</span>
+            <div class="btn-group" style="width:auto;gap:6px">
+                <button class="btn btn-sm btn-success" id="hw-btn-start" onclick="startRec()">&#9679; REC</button>
+                <button class="btn btn-sm btn-danger hidden" id="hw-btn-stop" onclick="stopRec()">&#9632; STOP</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    /* === Recording overlay === */
+    .hw-rec-overlay {
+        position: absolute; inset: 0; z-index: 10;
+        background: rgba(0,0,0,0.7); border-radius: 8px;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 12px;
+    }
+    .hw-rec-overlay.hidden { display: none; }
+    .hw-rec-msg {
+        font-family: var(--mono); font-size: 0.7rem;
+        color: var(--text-dim); text-align: center;
+    }
+
+    /* === Session info === */
+    .hw-session-info {
+        margin-bottom: 8px; padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .hw-session-title {
+        font-family: var(--mono); font-size: 0.75rem;
+        font-weight: 700; color: var(--text);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .hw-session-author {
+        font-family: var(--mono); font-size: 0.65rem;
+        color: var(--text-dim);
+    }
+
+    /* === Camera Preview === */
+    .pv-cameras { display: flex; gap: 10px; margin-bottom: 12px; }
+    .pv-cameras.hidden { display: none; }
+    .pv-cam-slot { flex: 1; min-width: 0; }
+    .pv-cam-slot.pv-cam-small { flex: 0 0 35%; max-width: 35%; }
+    .pv-cam-label {
+        font-family: var(--mono); font-size: 0.65rem; font-weight: 600;
+        color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .pv-cam-frame {
+        position: relative; width: 100%; aspect-ratio: 16/9;
+        background: #0a0a0a; border: 1px solid var(--border);
+        border-radius: 6px; overflow: hidden;
+    }
+    .pv-cam-slot.pv-cam-small .pv-cam-frame { aspect-ratio: 4/3; }
+    .pv-cam-frame img {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; display: none;
+    }
+    .pv-cam-frame img.live { display: block; }
+    .pv-cam-placeholder {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--text-dim); font-family: var(--mono); font-size: 0.7rem;
+    }
+    .pv-cam-frame img.live ~ .pv-cam-placeholder { display: none; }
+
+    @media (max-width: 480px) {
+        .pv-cameras { flex-direction: column; }
+        .pv-cam-slot.pv-cam-small { flex: 1; max-width: 100%; }
+    }
+
+    /* === Audio Preview === */
+    .pv-audio { margin-top: 4px; }
+    .pv-audio.hidden { display: none; }
+    .pv-audio-hdr {
+        font-family: var(--mono); font-size: 0.7rem; font-weight: 700;
+        color: var(--text-dim); margin-bottom: 8px;
+        text-transform: uppercase; letter-spacing: 0.5px;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .pv-audio-actions { display: flex; gap: 6px; align-items: center; }
+    .pv-audio-legend {
+        font-family: var(--mono); font-size: 0.6rem;
+        color: var(--text-dim); margin-top: 8px; opacity: 0.7;
+    }
+
+    /* Speaker button */
+    .pv-speaker, .pv-filter-btn {
+        background: none; border: 1px solid var(--border); border-radius: 4px;
+        padding: 2px 4px; cursor: pointer; color: var(--text-dim);
+        display: inline-flex; align-items: center; transition: all 0.15s;
+    }
+    .pv-speaker svg, .pv-filter-btn svg { width: 12px; height: 12px; }
+    .pv-speaker .spk-on { display: none; }
+    .pv-speaker .spk-off { display: block; }
+    .pv-speaker.active, .pv-filter-btn.active { color: var(--green); border-color: var(--green); }
+    .pv-speaker.active .spk-on { display: block; }
+    .pv-speaker.active .spk-off { display: none; }
+    .pv-speaker:hover, .pv-filter-btn:hover { border-color: var(--green); color: var(--green); }
+
+    /* VU meter row */
+    .vu-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; min-height: 24px; }
+    .vu-sel { width: 12px; flex-shrink: 0; font-size: 0.55rem; color: var(--green); text-align: center; }
+    .vu-sel.inactive { color: transparent; }
+    .vu-info { flex: 0 0 auto; min-width: 0; width: 110px; }
+    .vu-role { font-family: var(--mono); font-size: 0.6rem; font-weight: 700; color: var(--green); display: block; line-height: 1.1; }
+    .vu-name { font-family: var(--mono); font-size: 0.55rem; color: var(--text-dim); display: block; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .vu-track { flex: 1; height: 14px; min-width: 40px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; position: relative; }
+    .vu-fill {
+        position: absolute; top: 0; left: 0; bottom: 0; border-radius: 2px;
+        width: 0%; transition: width 0.08s linear;
+        background: linear-gradient(90deg, var(--green) 0%, var(--green) 60%, #e8a020 75%, #e84040 95%);
+    }
+    .vu-fill.muted {
+        background: linear-gradient(90deg, #2a3a2a 0%, #2a3a2a 60%, #3a3520 75%, #3a2020 95%);
+    }
+    .vu-fill.buffering {
+        width: 100% !important; opacity: 0.5;
+        background: repeating-linear-gradient(
+            -45deg, #c89030 0px, #c89030 8px, transparent 8px, transparent 16px
+        );
+        background-size: 22.6px 100%;
+        animation: vu-barberpole 0.6s linear infinite;
+    }
+    @keyframes vu-barberpole { to { background-position: 22.6px 0; } }
+    .vu-db { width: 36px; flex-shrink: 0; text-align: right; font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); }
+
+    /* Audio activation overlay */
+    .pv-audio-blocked {
+        position: absolute; inset: 0; z-index: 5;
+        background: rgba(0,0,0,0.6); border-radius: 6px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: opacity 0.3s;
+    }
+    .pv-audio-blocked span {
+        font-family: var(--mono); font-size: 0.75rem;
+        color: var(--green); padding: 8px 16px;
+        border: 1px solid var(--green); border-radius: 6px;
+        background: rgba(0,0,0,0.5);
+    }
+    .pv-audio-blocked.hidden { display: none; }
+</style>
+
+<script>
+    if (!FITEBOX.isAuthenticated()) window.location.href = '/';
+
+    const _key = sessionStorage.getItem('fitebox_key') || '';
+
+    let _hwActive = false;
+    let _hwRecording = false;
+    let _hwFirstStatus = true;
+    let _audioCtx = null;
+    let _vuAnimId = null;
+    let _masterMuted = false;
+
+    // Per-card audio state: { cardId: { audio, mediaSource, analyser, gain, muted } }
+    const _audioNodes = {};
+
+    // === AUTO-START ===
+
+    FITEBOX.onStatus(async (s) => {
+        const wasRec = _hwRecording;
+        _hwRecording = !!s.recording;
+
+        // Recording overlay
+        document.getElementById('hw-rec-overlay').classList.toggle('hidden', !_hwRecording);
+
+        // Recording controls
+        document.getElementById('hw-btn-start').classList.toggle('hidden', _hwRecording);
+        document.getElementById('hw-btn-stop').classList.toggle('hidden', !_hwRecording);
+
+        const badge = document.getElementById('hw-rec-badge');
+        if (_hwRecording) {
+            badge.textContent = 'REC'; badge.className = 'status-badge recording';
+            document.getElementById('hw-rec-timer').textContent = FITEBOX.formatTime(s.recording_time || 0);
+        } else {
+            badge.textContent = 'READY'; badge.className = 'status-badge ready';
+            document.getElementById('hw-rec-timer').textContent = '--:--:--';
+        }
+
+        // Auto-stop preview when recording starts - disconnect browser streams immediately
+        if (_hwRecording && !wasRec && _hwActive) {
+            _disconnectBrowserStreams();
+            await stopHardware();
+        }
+
+        // Auto-start on first non-recording status
+        if (_hwFirstStatus && !_hwRecording) {
+            _hwFirstStatus = false;
+            await startHardware();
+        }
+        // Auto-restart when recording stops
+        if (wasRec && !_hwRecording && !_hwActive) {
+            await startHardware();
+        }
+
+        _hwFirstStatus = false;
+    });
+
+    // Load session info
+    async function loadSession() {
+        try {
+            const s = await FITEBOX.get('/api/schedule/session');
+            if (s && (s.title || s.author)) {
+                document.getElementById('hw-session-title').textContent = s.title || '';
+                document.getElementById('hw-session-author').textContent = s.author || '';
+                document.getElementById('hw-session-info').style.display = '';
+            } else {
+                document.getElementById('hw-session-info').style.display = 'none';
+            }
+        } catch(e) {}
+    }
+    loadSession();
+
+    // === HARDWARE PREVIEW LIFECYCLE ===
+
+    async function startHardware() {
+        document.getElementById('hw-status-text').textContent = 'Detecting...';
+        try {
+            try { await FITEBOX.post('/api/preview/stop'); } catch(e) {}
+
+            const res = await FITEBOX.post('/api/preview/start');
+            if (res.status !== 'ok') {
+                document.getElementById('hw-status-text').textContent = 'Detection failed';
+                FITEBOX.toast(res.message || 'Detection failed', 'error');
+                return;
+            }
+
+            _hwActive = true;
+            document.getElementById('hw-status-text').textContent = '';
+            document.getElementById('pv-cameras').classList.remove('hidden');
+            document.getElementById('pv-audio').classList.remove('hidden');
+
+            connectCameraStreams(res.video || []);
+            buildAudioMeters(res.audio || [], res.video || []);
+            connectAllAudio(res.audio || [], res.video || []);
+
+            // If AudioContext already running (user already clicked before), 
+            // show buffering directly. Otherwise show activation overlay.
+            const overlay = document.getElementById('pv-audio-blocked');
+            if (_audioCtx && _audioCtx.state === 'running') {
+                overlay.classList.add('hidden');
+                // Show buffering on all bars (audio is connecting)
+                for (const cardId of Object.keys(_audioNodes)) {
+                    const row = document.querySelector('.vu-row[data-card-id="' + cardId + '"]');
+                    if (row) {
+                        row.querySelector('.vu-fill').classList.add('buffering');
+                        row.querySelector('.vu-db').textContent = '...';
+                    }
+                }
+                _audioActivated = true;
+            } else {
+                overlay.classList.remove('hidden');
+            }
+        } catch(e) {
+            document.getElementById('hw-status-text').textContent = 'Error';
+            FITEBOX.toast('Hardware error: ' + e.message, 'error');
+        }
+    }
+
+    async function stopHardware() {
+        _hwActive = false;
+        _audioActivated = false;
+        stopVU();
+        disconnectAllAudio();
+
+        ['pv-img-hdmi', 'pv-img-cam'].forEach(id => {
+            const img = document.getElementById(id);
+            if (img) { img.src = ''; img.classList.remove('live'); }
+        });
+
+        try { await FITEBOX.post('/api/preview/stop'); } catch(e) {}
+
+        document.getElementById('pv-cameras').classList.add('hidden');
+        document.getElementById('pv-audio').classList.add('hidden');
+        document.getElementById('hw-status-text').textContent = '';
+    }
+
+    async function refreshHardware() {
+        await stopHardware();
+        await startHardware();
+    }
+
+    // === CAMERAS (MJPEG) ===
+
+    function connectCameraStreams(videoDevices) {
+        const sources = [
+            { type: 'hdmi', imgId: 'pv-img-hdmi', phId: 'pv-ph-hdmi' },
+            { type: 'cam',  imgId: 'pv-img-cam',  phId: 'pv-ph-cam' },
+        ];
+        sources.forEach(src => {
+            const vd = videoDevices.find(d => d.type === src.type);
+            const ph = document.getElementById(src.phId);
+            const img = document.getElementById(src.imgId);
+            if (!vd) { if (ph) ph.textContent = 'Not detected'; return; }
+            if (ph) ph.textContent = 'Connecting...';
+            img.onload = () => { img.classList.add('live'); };
+            img.onerror = () => { img.classList.remove('live'); if (ph) ph.textContent = 'No signal'; };
+            img.src = '/api/preview/stream/' + src.type + '?key=' + encodeURIComponent(_key);
+        });
+    }
+
+    // === AUDIO - MP3 stream via <audio> + Web Audio API ===
+    // ffmpeg streams low-latency MP3. Browser plays via <audio> element.
+    // MediaElementSource taps into the audio for VU + client-side filters.
+
+    let _filterOn = true;
+
+    function ensureAudioCtx() {
+        if (!_audioCtx) {
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (_audioCtx.state === 'suspended') {
+            _audioCtx.resume().catch(() => {});
+        }
+        return _audioCtx;
+    }
+
+    // Resume AudioContext + start playback on first user interaction
+    let _audioActivated = false;
+    function activateAudio() {
+        if (_audioActivated) return;
+
+        if (_audioCtx && _audioCtx.state === 'suspended') {
+            _audioCtx.resume();
+        }
+        // Show buffering animation on all VU bars
+        for (const cardId of Object.keys(_audioNodes)) {
+            const row = document.querySelector('.vu-row[data-card-id="' + cardId + '"]');
+            if (row) {
+                row.querySelector('.vu-fill').classList.add('buffering');
+                row.querySelector('.vu-db').textContent = '...';
+            }
+        }
+        // Retry play on all audio elements (may have been blocked by autoplay)
+        for (const node of Object.values(_audioNodes)) {
+            if (node.audio.paused) {
+                node.audio.play().catch(() => {});
+            }
+        }
+        document.getElementById('pv-audio-blocked').classList.add('hidden');
+        _audioActivated = true;
+    }
+
+    document.addEventListener('click', activateAudio, { once: true });
+
+    function buildAudioMeters(audioCards, videoDevices) {
+        const container = document.getElementById('pv-meters');
+        container.innerHTML = '';
+
+        const cardToSource = {};
+        videoDevices.forEach(vd => {
+            if (vd.audio_card) cardToSource[vd.audio_card] = vd.type;
+        });
+
+        audioCards.forEach(card => {
+            const isSel = !!card.selected;
+            const roleText = card.selected === 'voice' ? 'VOICE' :
+                             card.selected === 'hdmi' ? 'HDMI' : card.name;
+            const source = cardToSource[card.id] || card.id;
+
+            const row = document.createElement('div');
+            row.className = 'vu-row';
+            row.dataset.cardId = card.id;
+            row.dataset.source = source;
+
+            row.innerHTML =
+                '<div class="vu-sel ' + (isSel ? '' : 'inactive') + '">&#9654;</div>' +
+                '<div class="vu-info">' +
+                    '<span class="vu-role">' + roleText + '</span>' +
+                    '<span class="vu-name">' + card.dev + ' &mdash; ' + card.name + '</span>' +
+                '</div>' +
+                '<div class="vu-track"><div class="vu-fill"></div></div>' +
+                '<div class="vu-db">&mdash;</div>' +
+                '<button class="pv-speaker active" id="pv-spk-' + card.id + '" ' +
+                    'onclick="toggleMute(\'' + card.id + '\')" title="Mute/unmute">' +
+                    '<svg class="spk-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>' +
+                    '<svg class="spk-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>' +
+                '</button>';
+            container.appendChild(row);
+        });
+    }
+
+    function connectAllAudio(audioCards, videoDevices) {
+        const ctx = ensureAudioCtx();
+
+        const cardToSource = {};
+        videoDevices.forEach(vd => {
+            if (vd.audio_card) cardToSource[vd.audio_card] = vd.type;
+        });
+
+        audioCards.forEach(card => {
+            const source = cardToSource[card.id] || card.id;
+
+            const audioEl = document.createElement('audio');
+            audioEl.preload = 'none';
+            audioEl.src = '/api/preview/listen/' + source + '?key=' + encodeURIComponent(_key);
+            audioEl.onerror = () => { console.warn('Audio error for ' + card.id + ':', audioEl.error); };
+            document.body.appendChild(audioEl);
+
+            const mediaSource = ctx.createMediaElementSource(audioEl);
+
+            const highpass = ctx.createBiquadFilter();
+            highpass.type = 'highpass';
+            highpass.frequency.value = _filterOn ? 80 : 1;
+            highpass.Q.value = 0.7;
+
+            const lowpass = ctx.createBiquadFilter();
+            lowpass.type = 'lowpass';
+            lowpass.frequency.value = _filterOn ? 3500 : 24000;
+            lowpass.Q.value = 0.7;
+
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.85;
+
+            const gain = ctx.createGain();
+            gain.gain.value = _masterMuted ? 0 : 1;
+
+            mediaSource.connect(highpass);
+            highpass.connect(lowpass);
+            lowpass.connect(analyser);
+            analyser.connect(gain);
+            gain.connect(ctx.destination);
+
+            _audioNodes[card.id] = {
+                audio: audioEl, mediaSource, highpass, lowpass, analyser, gain,
+                muted: _masterMuted,
+            };
+
+            // When audio actually starts, clear any buffering animation
+            const cardId = card.id;
+            audioEl.addEventListener('playing', () => {
+                const row = document.querySelector('.vu-row[data-card-id="' + cardId + '"]');
+                if (row) row.querySelector('.vu-fill').classList.remove('buffering');
+            }, { once: true });
+
+            audioEl.play().catch(() => {});
+        });
+
+        startVU();
+    }
+
+    function disconnectAllAudio() {
+        for (const [cardId, node] of Object.entries(_audioNodes)) {
+            try {
+                node.audio.pause();
+                node.audio.removeAttribute('src');
+                node.audio.load();
+                node.audio.remove();
+                node.mediaSource.disconnect();
+                node.highpass.disconnect();
+                node.lowpass.disconnect();
+                node.analyser.disconnect();
+                node.gain.disconnect();
+            } catch(e) {}
+        }
+        for (const k of Object.keys(_audioNodes)) delete _audioNodes[k];
+        for (const k of Object.keys(_vuSmooth)) delete _vuSmooth[k];
+    }
+
+    // === VU METER ANIMATION ===
+
+    const _VU_NOISE_FLOOR = -45;
+    const _VU_SMOOTHING = 0.8;
+    const _vuSmooth = {};
+
+    function startVU() {
+        if (_vuAnimId) return;
+        function vuLoop() {
+            for (const [cardId, node] of Object.entries(_audioNodes)) {
+                const row = document.querySelector('.vu-row[data-card-id="' + cardId + '"]');
+                if (!row) continue;
+                const fill = row.querySelector('.vu-fill');
+                const dbLabel = row.querySelector('.vu-db');
+
+                // Don't override buffering animation
+                if (fill.classList.contains('buffering')) continue;
+
+                const buf = new Uint8Array(node.analyser.frequencyBinCount);
+                node.analyser.getByteTimeDomainData(buf);
+
+                let sum = 0;
+                for (let i = 0; i < buf.length; i++) {
+                    const v = (buf[i] - 128) / 128;
+                    sum += v * v;
+                }
+                const rms = Math.sqrt(sum / buf.length);
+                let db = rms > 0.001 ? 20 * Math.log10(rms) : -60;
+
+                // Noise gate (only when filter is on)
+                if (_filterOn && db < _VU_NOISE_FLOOR) db = -60;
+
+                const prev = _vuSmooth[cardId] || -60;
+                db = prev * _VU_SMOOTHING + db * (1 - _VU_SMOOTHING);
+                _vuSmooth[cardId] = db;
+
+                const clampedDb = Math.max(-60, Math.min(0, db));
+                const pct = Math.max(0, Math.min(100, ((clampedDb + 40) / 40) * 100));
+                fill.style.width = pct + '%';
+                dbLabel.textContent = clampedDb > -45 ? Math.round(clampedDb) + ' dB' : '-\u221e';
+
+                fill.classList.toggle('muted', node.muted);
+            }
+            _vuAnimId = requestAnimationFrame(vuLoop);
+        }
+        _vuAnimId = requestAnimationFrame(vuLoop);
+    }
+
+    function stopVU() {
+        if (_vuAnimId) { cancelAnimationFrame(_vuAnimId); _vuAnimId = null; }
+    }
+
+    // === FILTER TOGGLE ===
+
+    function toggleFilter() {
+        _filterOn = !_filterOn;
+        for (const node of Object.values(_audioNodes)) {
+            node.highpass.frequency.value = _filterOn ? 80 : 1;
+            node.lowpass.frequency.value = _filterOn ? 3500 : 24000;
+        }
+        document.getElementById('btn-filter').classList.toggle('active', _filterOn);
+    }
+
+    // === MUTE CONTROLS ===
+
+    function toggleMute(cardId) {
+        activateAudio();
+
+        const node = _audioNodes[cardId];
+        if (!node) return;
+        node.muted = !node.muted;
+        node.gain.gain.value = node.muted ? 0 : 1;
+
+        const btn = document.getElementById('pv-spk-' + cardId);
+        if (btn) btn.classList.toggle('active', !node.muted);
+
+        updateMasterMuteUI();
+    }
+
+    function toggleMasterMute() {
+        activateAudio();
+
+        // If any device is unmuted → mute all. If all muted → unmute all.
+        const anyActive = Object.values(_audioNodes).some(n => !n.muted);
+
+        if (anyActive) {
+            // Mute everything
+            _masterMuted = true;
+            for (const [cardId, node] of Object.entries(_audioNodes)) {
+                node.muted = true;
+                node.gain.gain.value = 0;
+                const btn = document.getElementById('pv-spk-' + cardId);
+                if (btn) btn.classList.remove('active');
+            }
+        } else {
+            // Unmute everything
+            _masterMuted = false;
+            for (const [cardId, node] of Object.entries(_audioNodes)) {
+                node.muted = false;
+                node.gain.gain.value = 1;
+                const btn = document.getElementById('pv-spk-' + cardId);
+                if (btn) btn.classList.add('active');
+            }
+        }
+
+        document.getElementById('btn-master-mute').classList.toggle('active', !_masterMuted);
+    }
+
+    function updateMasterMuteUI() {
+        // Sync master button: if all individually muted, show master as muted
+        const nodes = Object.values(_audioNodes);
+        const allMuted = nodes.length > 0 && nodes.every(n => n.muted);
+        _masterMuted = allMuted;
+        document.getElementById('btn-master-mute').classList.toggle('active', !_masterMuted);
+    }
+
+    // === RECORDING ===
+
+    async function startRec() {
+        if (_hwActive) await stopHardware();
+        await FITEBOX.post('/api/recording/start');
+        FITEBOX.toast('Recording started', 'success');
+    }
+
+    async function stopRec() {
+        const ok = await FITEBOX.confirm('Stop Recording', 'Stop the current recording?');
+        if (!ok) return;
+        await FITEBOX.post('/api/recording/stop');
+        FITEBOX.toast('Recording stopped', 'success');
+    }
+
+    // === PAGE CLEANUP ===
+    // Stop browser-side streams when navigating away (releases HTTP connections)
+    function _disconnectBrowserStreams() {
+        stopVU();
+        for (const node of Object.values(_audioNodes)) {
+            try { node.audio.pause(); node.audio.removeAttribute('src'); node.audio.load(); } catch(e) {}
+        }
+        ['pv-img-hdmi', 'pv-img-cam'].forEach(id => {
+            const img = document.getElementById(id);
+            if (img) img.src = '';
+        });
+    }
+
+    window.addEventListener('pagehide', _disconnectBrowserStreams);
+</script>
+{% endblock %}

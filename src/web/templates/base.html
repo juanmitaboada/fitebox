@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0b1622">
+    <title>{% block title %}FITEBOX{% endblock %}</title>
+    <link rel="stylesheet" href="/statics/fitebox.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="app">
+        <div class="conn-banner hidden" id="conn-banner">
+            <span class="conn-banner-dot"></span>
+            Disconnected - retrying...
+        </div>
+
+        <!-- Page Header (shared across all pages) -->
+        <div class="page-header">
+            <img src="/statics/logo_header.png" alt="FITEBOX" class="logo-small" id="header-logo">
+            <div class="header-info">
+                <div class="header-status"><span class="conn-dot disconnected"></span></div>
+                <div class="tele-page">{% block page_title %}FITEBOX{% endblock %}</div>
+            </div>
+            <div class="tele-bar" id="tele-bar">
+                <div class="tele-row tele-row-top">
+                    <div class="tele-talk hidden" id="tele-talk">
+                        <span class="tele-author" id="tele-author"></span>
+                        <span class="tele-sep" id="tele-sep">&mdash;</span>
+                        <span class="tele-title" id="tele-title"></span>
+                    </div>
+                    <div class="tele-pill rec hidden" id="tele-rec">
+                        <span class="tele-rec-dot"></span>
+                        <span id="tele-rec-label">REC</span>
+                        <span class="tele-mono" id="tele-rec-time">00:00:00</span>
+                    </div>
+                    <div class="tele-pill stream hidden" id="tele-stream">
+                        <span id="tele-stream-icon"></span>
+                        <span class="tele-mono" id="tele-stream-label">LIVE</span>
+                    </div>
+                </div>
+                <div class="tele-row tele-row-bottom">
+                    <span class="tele-stat" id="tele-cpu" title="CPU">--</span>
+                    <span class="tele-stat" id="tele-temp" title="Temperature">--</span>
+                    <span class="tele-stat" id="tele-disk" title="Disk free">--</span>
+                    <span class="tele-stat" id="tele-rx" title="Download"><span class="tele-arrow-rx">▼</span><span id="tele-rx-val">--</span></span>
+                    <span class="tele-stat" id="tele-tx" title="Upload"><span class="tele-arrow-tx">▲</span><span id="tele-tx-val">--</span></span>
+                    <span class="tele-signal" id="tele-signal" title="WiFi signal">
+                        <span class="tele-sig-bars">
+                            <span class="tsb tsb-1"></span>
+                            <span class="tsb tsb-2"></span>
+                            <span class="tsb tsb-3"></span>
+                            <span class="tsb tsb-4"></span>
+                        </span>
+                        <span class="tele-sig-pct" id="tele-sig-pct"></span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        {% block content %}{% endblock %}
+
+        <div style="text-align:center;padding:16px;font-family:var(--mono);font-size:0.65rem;color:var(--text-dim);cursor:pointer" onclick="openAbout()">
+        Made with <span style="color:var(--red)">&#9829;</span> in M&aacute;laga by <span style="color:var(--cyan)">OpenSouthCode</span>
+        </div>
+
+    </div>
+
+    {% block nav %}
+    <nav class="bottom-nav">
+        <a href="/dashboard" class="{% if active_page == 'dashboard' %}active{% endif %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>Home</span>
+        </a>
+        <a href="/hardware" class="{% if active_page == 'hardware' %}active{% endif %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>Hardware</span>
+        </a>
+        <a href="/recordings" class="{% if active_page == 'recordings' %}active{% endif %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            <span>Videos</span>
+        </a>
+        <a href="/system" class="{% if active_page == 'system' %}active{% endif %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>System</span>
+        </a>
+    </nav>
+    {% endblock %}
+
+    <!-- About Modal -->
+    <div id="about-modal" class="about-overlay hidden" onclick="if(event.target===this)closeAbout()">
+        <div class="about-box">
+            <div class="about-header">
+                <img src="/statics/logo_header.png" alt="FITEBOX" style="height:36px">
+                <button class="about-close" onclick="closeAbout()">&times;</button>
+            </div>
+            <div class="about-body">
+                <div class="about-section">
+                    <div class="about-badge">FITEBOX</div>
+                    <p>Autonomous conference recording appliance built on Raspberry Pi. Captures, composes and streams multi-source video with zero cloud dependency.</p>
+                    <div class="about-features">
+                        <div class="about-feat">
+                            <span class="about-feat-icon">&#9679;</span>
+                            <span>Multi-camera compositing (HDMI + USB)</span>
+                        </div>
+                        <div class="about-feat">
+                            <span class="about-feat-icon">&#9679;</span>
+                            <span>OLED display + hardware buttons</span>
+                        </div>
+                        <div class="about-feat">
+                            <span class="about-feat-icon">&#9679;</span>
+                            <span>Live streaming to YouTube, Twitch & RTMP</span>
+                        </div>
+                        <div class="about-feat">
+                            <span class="about-feat-icon">&#9679;</span>
+                            <span>Schedule integration (Pentabarf XML)</span>
+                        </div>
+                        <div class="about-feat">
+                            <span class="about-feat-icon">&#9679;</span>
+                            <span>Web dashboard for remote control</span>
+                        </div>
+                        <div class="about-feat">
+                            <span class="about-feat-icon">&#9679;</span>
+                            <span>Ad-hoc WiFi & wired networking</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="about-divider"></div>
+
+                <div class="about-section">
+                    <div class="about-badge osc">OpenSouthCode</div>
+                    <p>FITEBOX was born to record the talks at <strong>OpenSouthCode</strong>, a free and non-commercial conference celebrating open source software, hardware and culture in M&aacute;laga, Spain since 2016.</p>
+                    <p style="margin-top:8px">Held annually at <strong>La T&eacute;rmica</strong>, it brings together developers, educators, artists and families around the values of transparency, collaboration and technological independence. Over 50 sessions across multiple tracks, completely free and organized by volunteers.</p>
+                    <div class="about-links">
+                        <a href="https://www.opensouthcode.org" target="_blank" rel="noopener">opensouthcode.org</a>
+                        <a href="https://github.com/opensouthcode" target="_blank" rel="noopener">GitHub</a>
+
+                        <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache 2.0 License</a>
+                    </div>
+                </div>
+
+                <div class="about-divider"></div>
+
+                <div class="about-section">
+                    <div class="about-version"><span class="about-label">Version</span><span>{{version}}</span></div>
+                    <div class="about-version"><span class="about-label">Platform</span><span>{{rpi_model}}</span></div>
+                    <div class="about-version"><span class="about-label">OS</span><span>{{os_version}}</span></div>
+                    <div class="about-version"><span class="about-label">Stack</span><span>Python {{python_version}} · FFmpeg {{ffmpeg_version}}</span></div>
+                </div>
+
+                <div class="about-footer">
+                    Made with <span style="color:var(--red)">&#9829;</span> in M&aacute;laga
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .about-overlay {
+            position: fixed; inset: 0;
+            background: rgba(5, 10, 18, 0.85);
+            z-index: 500;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+            backdrop-filter: blur(6px);
+        }
+        .about-overlay.hidden { display: none; }
+
+        .about-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 520px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+            overflow: hidden;
+        }
+
+        .about-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .about-close {
+            background: none; border: none;
+            color: var(--text-dim); font-size: 24px;
+            cursor: pointer; padding: 0 4px;
+            line-height: 1;
+        }
+        .about-close:hover { color: var(--text); }
+
+        .about-body {
+            padding: 20px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .about-section { margin-bottom: 0; }
+
+        .about-badge {
+            display: inline-block;
+            font-family: var(--mono);
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: var(--green-dim);
+            color: var(--green);
+            margin-bottom: 10px;
+        }
+        .about-badge.osc {
+            background: rgba(48, 176, 192, 0.12);
+            color: var(--cyan);
+        }
+
+        .about-section p {
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+        .about-section p strong {
+            color: var(--text);
+        }
+
+        .about-features {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        .about-feat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+        }
+        .about-feat-icon {
+            color: var(--green);
+            font-size: 6px;
+            flex-shrink: 0;
+        }
+
+        .about-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 16px 0;
+        }
+
+        .about-links {
+            margin-top: 10px;
+            display: flex;
+            gap: 12px;
+        }
+        .about-links a {
+            font-family: var(--mono);
+            font-size: 0.72rem;
+            color: var(--green);
+            text-decoration: none;
+            padding: 4px 10px;
+            border: 1px solid var(--green);
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+        .about-links a:hover {
+            background: var(--green-dim);
+        }
+
+        .about-version {
+            display: flex;
+            justify-content: space-between;
+            font-family: var(--mono);
+            font-size: 0.75rem;
+            padding: 6px 0;
+            color: var(--text);
+        }
+        .about-label {
+            color: var(--text-dim);
+        }
+
+        .about-footer {
+            text-align: center;
+            font-family: var(--mono);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* Mobile: features stack single column */
+        @media (max-width: 480px) {
+            .about-features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+    <script>
+        // Attach click handler to logo on all pages
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.logo-small').forEach(logo => {
+                logo.style.cursor = 'pointer';
+                logo.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    openAbout();
+                });
+            });
+        });
+
+        function openAbout() {
+            document.getElementById('about-modal').classList.remove('hidden');
+        }
+
+        function closeAbout() {
+            document.getElementById('about-modal').classList.add('hidden');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('about-modal');
+                if (modal && !modal.classList.contains('hidden')) {
+                    closeAbout();
+                }
+            }
+        });
+    </script>
+
+    <script src="/statics/fitebox.js"></script>
+
+    <!-- Telemetry Bar Styles -->
+    <style>
+        /* Ensure page-header fits two-row telemetry */
+        .page-header { padding-top: 6px; padding-bottom: 6px; }
+        .page-header .header-info { flex-shrink: 0; flex-grow: 0; width: auto; }
+
+        .tele-page {
+            font-family: var(--mono); font-size: 0.62rem; font-weight: 600;
+            color: var(--text); white-space: nowrap;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+
+        .tele-bar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-end;
+            overflow: hidden;
+            min-width: 0;
+            gap: 1px;
+        }
+        .tele-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            justify-content: flex-end;
+        }
+
+        .tele-talk {
+            display: flex; align-items: center; gap: 4px;
+            min-width: 0; flex-shrink: 1; overflow: hidden;
+        }
+        .tele-author {
+            font-family: var(--mono); font-size: 0.62rem; font-weight: 600;
+            color: var(--green); white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; max-width: 140px;
+        }
+        .tele-sep { color: var(--text-dim); font-size: 0.6rem; flex-shrink: 0; }
+        .tele-title {
+            font-family: var(--mono); font-size: 0.62rem; color: var(--text-dim);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;
+        }
+
+        .tele-pill {
+            display: flex; align-items: center; gap: 4px;
+            padding: 1px 7px; border-radius: 10px;
+            font-family: var(--mono); font-size: 0.58rem; font-weight: 700;
+            white-space: nowrap; flex-shrink: 0;
+        }
+        .tele-pill.rec { background: rgba(232, 64, 64, 0.15); color: var(--red); }
+        .tele-pill.stream { background: rgba(48, 176, 192, 0.12); color: var(--cyan); }
+        .tele-pill svg { width: 11px; height: 11px; flex-shrink: 0; }
+
+        .tele-rec-dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--red); animation: pulse-badge 1s infinite;
+        }
+        .tele-mono { font-variant-numeric: tabular-nums; }
+
+        .tele-stat {
+            font-family: var(--mono); font-size: 0.6rem;
+            color: var(--text-dim); white-space: nowrap;
+        }
+        .tele-stat.warn { color: var(--yellow, #e8a020); }
+        .tele-stat.danger { color: var(--red); }
+        .tele-arrow-rx { color: #e8a020; }
+        .tele-arrow-tx { color: #e84040; }
+        .tele-rate-bright-rx { color: #e8a020; font-weight: 700; }
+        .tele-rate-bright-tx { color: #e84040; font-weight: 700; }
+
+        /* Header WiFi signal bars */
+        .tele-signal {
+            display: flex; align-items: center; gap: 3px;
+            font-family: var(--mono); font-size: 0.58rem;
+        }
+        .tele-sig-bars { display: flex; align-items: flex-end; gap: 1px; height: 12px; }
+        .tele-sig-bars .tsb {
+            width: 3px; border-radius: 0.5px;
+            background: var(--border, #333);
+            transition: background 0.3s;
+        }
+        .tsb-1 { height: 3px; }
+        .tsb-2 { height: 6px; }
+        .tsb-3 { height: 9px; }
+        .tsb-4 { height: 12px; }
+        .tsb.on { background: var(--green, #27ae60); }
+        .tsb.warn { background: var(--yellow, #e8a020); }
+        .tsb.bad { background: var(--red, #e74c3c); }
+        .tele-sig-pct { color: var(--text-dim); white-space: nowrap; }
+
+        @media (min-width: 960px) {
+            .tele-author { max-width: 240px; }
+            .tele-title { max-width: 360px; }
+        }
+        @media (max-width: 380px) {
+            .tele-author { max-width: 80px; }
+            .tele-title { max-width: 100px; }
+            .tele-stat { font-size: 0.55rem; }
+            .tele-row { gap: 6px; }
+        }
+    </style>
+
+    <!-- Telemetry Bar Logic -->
+    <script>
+    (function() {
+        const STREAM_ICONS = {
+            youtube: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.6 7.2s-.2-1.5-.8-2.1c-.8-.8-1.6-.8-2-.9C16 4 12 4 12 4s-4 0-6.8.2c-.4.1-1.2.1-2 .9-.6.6-.8 2.1-.8 2.1S2.2 9 2.2 10.8v1.4c0 1.8.2 3.6.2 3.6s.2 1.5.8 2.1c.8.8 1.8.8 2.2.9 1.6.1 6.6.2 6.6.2s4 0 6.8-.2c.4-.1 1.2-.1 2-.9.6-.6.8-2.1.8-2.1s.2-1.8.2-3.6v-1.4c0-1.8-.2-3.6-.2-3.6zM9.9 15.2V8.8l5.4 3.2-5.4 3.2z"/></svg>',
+            twitch: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.3 3L3 6.3v12.4h4.5V21h3l2.7-2.3h4.1L21 15V3H4.3zm14.4 11.2l-3 3H11l-2.7 2.3V17.2H5.3V5.3h13.4v8.9zM15 8.3v4.5h-2.3V8.3H15zm-5.3 0v4.5H7.5V8.3h2.2z"/></svg>',
+            custom: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5.6 18.4A9 9 0 0 1 3 12a9 9 0 0 1 2.6-6.4"/><path d="M18.4 5.6A9 9 0 0 1 21 12a9 9 0 0 1-2.6 6.4"/><path d="M8.5 15.5A5 5 0 0 1 7 12a5 5 0 0 1 1.5-3.5"/><path d="M15.5 8.5A5 5 0 0 1 17 12a5 5 0 0 1-1.5 3.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>',
+        };
+
+        function fmtRate(bps) {
+            if (bps === undefined || bps === null) return '-';
+            if (bps < 1024) return '0K/s';
+            if (bps < 1048576) return (bps / 1024).toFixed(0) + 'K/s';
+            return (bps / 1048576).toFixed(1) + 'M/s';
+        }
+
+        // Persistent streaming state (WS messages from manager don't include streaming fields)
+        let _wsStreamActive = false;
+        let _wsStreamDraining = false;
+        let _wsStreamPhase = '';
+        let _wsStreamDest = '';
+
+        FITEBOX.onStatus((s) => {
+            // Update streaming state ONLY if present in this message
+            if ('streaming_active' in s) _wsStreamActive = !!s.streaming_active;
+            if ('streaming_draining' in s) _wsStreamDraining = !!s.streaming_draining;
+            if ('streaming_phase' in s) _wsStreamPhase = s.streaming_phase || '';
+            if ('streaming_dest' in s) _wsStreamDest = s.streaming_dest || '';
+            if ('streaming_active' in s && !s.streaming_active && !s.streaming_draining) {
+                _wsStreamActive = false;
+                _wsStreamDraining = false;
+                _wsStreamPhase = '';
+            }
+            // Logo: recording indicator (all pages)
+            const logo = document.getElementById('header-logo');
+            if (logo) logo.src = s.recording ? '/statics/logo_header_rec.png' : '/statics/logo_header.png';
+
+            // Talk info
+            const talkEl = document.getElementById('tele-talk');
+            const author = s.recording_author || '';
+            const title = s.recording_title || '';
+            if (s.recording && (author || title)) {
+                document.getElementById('tele-author').textContent = author;
+                document.getElementById('tele-title').textContent = title;
+                document.getElementById('tele-sep').style.display = author && title ? '' : 'none';
+                talkEl.classList.remove('hidden');
+            } else {
+                talkEl.classList.add('hidden');
+            }
+
+            // Recording pill
+            const recEl = document.getElementById('tele-rec');
+            if (s.recording) {
+                const phase = s.recording_phase || 'recording';
+                const label = document.getElementById('tele-rec-label');
+                const time = document.getElementById('tele-rec-time');
+                if (phase === 'recording' || phase === '') {
+                    label.textContent = 'REC';
+                    time.textContent = FITEBOX.formatTime(s.recording_time || 0);
+                    time.style.display = '';
+                } else {
+                    const labels = { detecting: 'DETECTING', starting: 'STARTING' };
+                    label.textContent = labels[phase] || 'PREPARING';
+                    time.style.display = 'none';
+                }
+                recEl.classList.remove('hidden');
+            } else {
+                recEl.classList.add('hidden');
+            }
+
+            // Streaming pill (uses persistent state vars)
+            const streamEl = document.getElementById('tele-stream');
+            if (_wsStreamActive || _wsStreamDraining) {
+                const dest = _wsStreamDest || 'custom';
+                const phaseLabels = {waiting:'WAIT',buffering:'BUFFER',intro:'INTRO',live:'LIVE',draining:'FINISHING',outro:'OUTRO',closing:'CLOSING'};
+                const phaseText = phaseLabels[_wsStreamPhase] || 'STREAM';
+                document.getElementById('tele-stream-icon').innerHTML = STREAM_ICONS[dest] || STREAM_ICONS.custom;
+                document.getElementById('tele-stream-label').textContent = phaseText;
+                streamEl.classList.remove('hidden');
+            } else {
+                streamEl.classList.add('hidden');
+            }
+
+            // CPU
+            const cpu = s.cpu || 0;
+            const cpuEl = document.getElementById('tele-cpu');
+            cpuEl.textContent = 'CPU ' + cpu + '%';
+            cpuEl.className = 'tele-stat' + (cpu > 80 ? ' danger' : cpu > 60 ? ' warn' : '');
+
+            // Temp
+            const temp = s.temp || 0;
+            const tempEl = document.getElementById('tele-temp');
+            tempEl.textContent = temp + '°C';
+            tempEl.className = 'tele-stat' + (temp > 75 ? ' danger' : temp > 60 ? ' warn' : '');
+
+            // Disk
+            const diskFree = s.disk_free_gb || 0;
+            const diskPct = s.disk || 0;
+            const diskEl = document.getElementById('tele-disk');
+            diskEl.textContent = diskFree + 'GB';
+            diskEl.className = 'tele-stat' + (diskPct > 85 ? ' danger' : diskPct > 70 ? ' warn' : '');
+
+            // Network - split RX (download) / TX (upload), composite of all interfaces
+            const rxVal = document.getElementById('tele-rx-val');
+            const txVal = document.getElementById('tele-tx-val');
+            if (s.net_rates) {
+                const nr = s.net_rates;
+                const wl = nr.wlan0 || {};
+                const et = nr.eth0 || {};
+                const rxTotal = (wl.rx_rate || 0) + (et.rx_rate || 0);
+                const txTotal = (wl.tx_rate || 0) + (et.tx_rate || 0);
+                rxVal.textContent = fmtRate(rxTotal);
+                txVal.textContent = fmtRate(txTotal);
+                rxVal.className = rxTotal >= 1048576 ? 'tele-rate-bright-rx' : '';
+                txVal.className = txTotal >= 1048576 ? 'tele-rate-bright-tx' : '';
+            } else {
+                rxVal.textContent = '-';
+                txVal.textContent = '-';
+                rxVal.className = '';
+                txVal.className = '';
+            }
+
+            // WiFi signal bars
+            const sigBars = document.querySelectorAll('.tele-sig-bars .tsb');
+            const sigPct = document.getElementById('tele-sig-pct');
+            const sigDbm = s.wifi_signal || 0;
+            if (sigDbm && s.wifi_enabled !== false) {
+                const pct = Math.max(0, Math.min(100, Math.round((sigDbm + 90) * 100 / 60)));
+                const active = Math.ceil(pct / 25);  // 0-4 bars
+                const cls = pct >= 60 ? 'on' : pct >= 30 ? 'warn' : 'bad';
+                sigBars.forEach((b, i) => {
+                    b.className = 'tsb tsb-' + (i + 1) + (i < active ? ' ' + cls : '');
+                });
+                sigPct.textContent = pct + '%';
+            } else {
+                sigBars.forEach((b, i) => { b.className = 'tsb tsb-' + (i + 1); });
+                sigPct.textContent = '';
+            }
+        });
+    })();
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

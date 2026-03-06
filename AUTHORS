@@ -1,0 +1,10 @@
+# FITEBOX Authors & Contributors
+#
+# This file lists everyone who has contributed to FITEBOX.
+# If you submit a PR, feel free to add yourself here.
+#
+# Format: Name <email> - Role / contribution
+# Sorted chronologically by first contribution.
+
+Juanmi Taboada <juanmi@juanmitaboada.com> - Creator & maintainer: recording engine (v36), streaming pipeline, web interface, system manager, OLED controller v2+, CPU optimization, setup automation
+David Santos <dsecuma@gmail.com> - Hardware architecture, component selection (OLED, GPIO buttons, HDMI capture card), first OLED controller software, 3D-printed enclosure design (STL files)

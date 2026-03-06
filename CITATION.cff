@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+title: FITEBOX
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Juanmi
+    family-names: Taboada
+    email: juanmi@juanmitaboada.com
+    affiliation: OpenSouthCode
+  - given-names: David
+    family-names: Santos
+    email: dsecuma@gmail.com
+    affiliation: OpenSouthCode
+repository-code: 'https://github.com/juanmitaboada/fitebox'
+url: 'https://www.juanmitaboada.com/fitebox/'
+abstract: >-
+  Autonomous conference recording and streaming appliance built
+  on Raspberry Pi 5. Captures composite video (HDMI slides +
+  USB camera), mixes audio, applies branded overlays, and
+  optionally streams to YouTube/Twitch via a single RTMP
+  connection. Managed from an OLED screen with GPIO buttons or
+  a web dashboard on your phone. Integrates with Frab/Pentabarf
+  conference schedules. Zero cloud dependency - everything runs
+  on a single-board computer in a portable 3D-printed enclosure.
+keywords:
+  - fitebox
+  - conference-recording
+  - raspberry-pi-5
+  - open-source
+  - video-capture
+  - ffmpeg
+  - live-streaming
+  - opensouthcode
+  - rtmp
+  - docker
+  - hdmi-capture
+  - autonomous-recording
+  - oled-display
+  - fastapi
+license: Apache-2.0
+version: 3.0.0
+date-released: '2026-02-13'
