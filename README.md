@@ -1,3 +1,9 @@
+[![Build](https://github.com/juanmitaboada/fitebox/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/juanmitaboada/fitebox/actions/workflows/docker-publish.yml)
+[![Docker Hub](https://img.shields.io/docker/v/br0th3r/fitebox?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/br0th3r/fitebox)
+[![Docker Pulls](https://img.shields.io/docker/pulls/br0th3r/fitebox?logo=docker)](https://hub.docker.com/r/br0th3r/fitebox)
+[![GHCR](https://img.shields.io/badge/GHCR-ghcr.io-blue?logo=github)](https://github.com/juanmitaboada/fitebox/pkgs/container/fitebox)
+[![Platform](https://img.shields.io/badge/platform-linux%2Farm64-lightgrey?logo=raspberrypi)](https://www.raspberrypi.com/products/raspberry-pi-5/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 # FITEBOX - Autonomous Conference Recording Appliance
 
 **Record every room. Spend almost nothing. Keep full control.**
