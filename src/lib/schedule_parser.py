@@ -5,12 +5,33 @@ Parses Frab/Pentabarf schedule.xml and provides session lookup.
 Future formats (CSV, JSON) can be added here.
 """
 
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # noqa: N817
 from datetime import datetime, timedelta
-from typing import Optional
+
+from typing_extensions import TypedDict
+
+from lib.types import Session
 
 
-def parse_schedule(xml_path: str) -> dict:
+class Conference(TypedDict):
+    title: str
+    start: str
+    end: str
+    days: str
+
+
+class Day(TypedDict):
+    index: int
+    date: str
+    rooms: dict[str, list[Session]]
+
+
+class Schedule(TypedDict):
+    conference: Conference | None
+    days: list[Day]  # Each day has index, date, rooms
+
+
+def parse_schedule(xml_path: str) -> Schedule:
     """
     Parse a Frab/Pentabarf schedule.xml into a structured dict.
 
@@ -51,27 +72,27 @@ def parse_schedule(xml_path: str) -> dict:
 
     # Conference info
     conf_el = root.find("conference")
-    conference = {}
+    conference: Conference | None = None
     if conf_el is not None:
-        conference = {
-            "title": _text(conf_el, "title"),
-            "start": _text(conf_el, "start"),
-            "end": _text(conf_el, "end"),
-            "days": _text(conf_el, "days"),
-        }
+        conference = Conference(
+            title=_text(conf_el, "title"),
+            start=_text(conf_el, "start"),
+            end=_text(conf_el, "end"),
+            days=_text(conf_el, "days"),
+        )
 
     # Days
     days = []
     for day_el in root.findall("day"):
-        day_data = {
-            "index": int(day_el.get("index", "0")),
-            "date": day_el.get("date", ""),
-            "rooms": {},
-        }
+        day_data: Day = Day(
+            index=int(day_el.get("index", "0")),
+            date=day_el.get("date", ""),
+            rooms={},
+        )
 
         for room_el in day_el.findall("room"):
             room_name = room_el.get("name", "Unknown")
-            events = []
+            events: list[Session] = []
 
             for event_el in room_el.findall("event"):
                 event = _parse_event(event_el, room_name, day_data["date"])
@@ -86,22 +107,25 @@ def parse_schedule(xml_path: str) -> dict:
     return {"conference": conference, "days": days}
 
 
-def get_rooms(xml_path: str) -> list:
+def get_rooms(xml_path: str) -> list[str]:
     """
     Extract unique room names from schedule.
 
     Returns: sorted list of room name strings
     """
     schedule = parse_schedule(xml_path)
-    rooms = set()
+    rooms: set[str] = set()
     for day in schedule["days"]:
         rooms.update(day["rooms"].keys())
     return sorted(rooms)
 
 
 def find_current_session(
-    xml_path: str, room: str, dt: datetime = None, offset_minutes: int = 15
-) -> Optional[dict]:
+    xml_path: str,
+    room: str,
+    dt: datetime | None = None,
+    offset_minutes: int = 15,
+) -> Session | None:
     """
     Find the session happening at dt + offset_minutes in the given room.
 
@@ -118,8 +142,11 @@ def find_current_session(
 
 
 def find_adjacent_sessions(
-    xml_path: str, room: str, dt: datetime = None, offset_minutes: int = 15
-) -> tuple:
+    xml_path: str,
+    room: str,
+    dt: datetime | None = None,
+    offset_minutes: int = 15,
+) -> tuple[Session | None, Session | None, Session | None]:
     """
     Find previous, current, and next sessions for a room at a given time.
 
@@ -203,8 +230,8 @@ def _text(parent, tag: str, default: str = "") -> str:
     return el.text.strip() if el is not None and el.text else default
 
 
-def _parse_event(event_el, room_name: str, day_date: str) -> dict:
-    """Parse a single <event> element into a session dict."""
+def _parse_event(event_el, room_name: str, day_date: str) -> Session:
+    """Parse a single <event> element into a session"""
     # Persons / authors
     persons = []
     persons_el = event_el.find("persons")
@@ -226,22 +253,23 @@ def _parse_event(event_el, room_name: str, day_date: str) -> dict:
     if not description:
         description = _text(event_el, "abstract")
 
-    return {
-        "event_id": event_el.get("id", ""),
-        "title": _text(event_el, "title"),
-        "author": author,
-        "description": description,
-        "room": room_name,
-        "date": day_date,
-        "start": start,
-        "end": end,
-        "duration": duration,
-        "track": _text(event_el, "track"),
-        "language": _text(event_el, "language"),
-        "type": _text(event_el, "type"),
-        "slug": _text(event_el, "slug"),
-        "url": _text(event_el, "url"),
-    }
+    return Session(
+        event_id=event_el.get("id", ""),
+        title=_text(event_el, "title"),
+        author=author,
+        description=description,
+        room=room_name,
+        date=day_date,
+        start=start,
+        end=end,
+        duration=duration,
+        track=_text(event_el, "track"),
+        language=_text(event_el, "language"),
+        type=_text(event_el, "type"),
+        slug=_text(event_el, "slug"),
+        url=_text(event_el, "url"),
+        updated_at="",
+    )
 
 
 def _calc_end_time(start: str, duration: str) -> str:
@@ -264,23 +292,24 @@ if __name__ == "__main__":
         print("Usage: schedule_parser.py <schedule.xml> [room] [HH:MM]")
         sys.exit(1)
 
-    xml_path = sys.argv[1]
+    xml_filepath = sys.argv[1]
 
     print("=== Rooms ===")
-    for r in get_rooms(xml_path):
+    for r in get_rooms(xml_filepath):
         print(f"  {r}")
 
     if len(sys.argv) >= 3:
-        room = sys.argv[2]
-        dt = datetime.now()
+        rname = sys.argv[2]
+        ts = datetime.now()
         if len(sys.argv) >= 4:
             h, m = map(int, sys.argv[3].split(":"))
-            dt = dt.replace(hour=h, minute=m)
+            ts = ts.replace(hour=h, minute=m)
 
         print(
-            f"\n=== Sessions in '{room}' at {dt.strftime('%H:%M')} (+15min) ==="
+            f"\n=== Sessions in '{rname}' at "
+            f"{ts.strftime('%H:%M')} (+15min) ===",
         )
-        prev_s, cur_s, next_s = find_adjacent_sessions(xml_path, room, dt)
+        prev_s, cur_s, next_s = find_adjacent_sessions(xml_filepath, rname, ts)
 
         for label, s in [
             ("PREV", prev_s),
@@ -289,7 +318,8 @@ if __name__ == "__main__":
         ]:
             if s:
                 print(
-                    f"  {label}: {s['start']}-{s['end']} {s['author']} - {s['title']}"
+                    f"  {label}: {s['start']}-{s['end']} "
+                    f"{s['author']} - {s['title']}",
                 )
             else:
                 print(f"  {label}: (none)")

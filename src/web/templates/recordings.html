@@ -169,8 +169,6 @@
         font-weight: 600;
         white-space: nowrap;
     }
-    .rec-tag.streamed { background: rgba(48, 176, 192, 0.15); color: var(--cyan); border: 1px solid rgba(48, 176, 192, 0.3); }
-    .rec-tag.downloaded { background: rgba(48, 176, 192, 0.15); color: var(--cyan); border: 1px solid rgba(48, 176, 192, 0.3); }
     .rec-tag.bumpers-add {
         background: var(--green-dim); color: var(--green);
         border: 1px solid rgba(61, 220, 132, 0.3);
@@ -182,16 +180,50 @@
         border: 1px solid rgba(90, 122, 154, 0.15);
     }
 
-    /* Histogram tag - clickable, color = worst status */
-    .rec-tag.histo {
+    /* Icon tags (streamed, downloaded) */
+    .tag-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px; height: 22px;
+        border-radius: 4px;
+        cursor: default;
+        transition: transform 0.15s;
+        flex-shrink: 0;
+    }
+    .tag-icon:hover { transform: scale(1.15); }
+    .tag-icon svg { width: 14px; height: 14px; }
+    .tag-icon.tag-yt { background: rgba(255, 0, 0, 0.1); }
+    .tag-icon.tag-yt svg { fill: #ff4444; }
+    .tag-icon.tag-twitch { background: rgba(145, 70, 255, 0.1); }
+    .tag-icon.tag-twitch svg { fill: #9146ff; }
+    .tag-icon.tag-custom { background: rgba(48, 176, 192, 0.1); }
+    .tag-icon.tag-custom svg { fill: #40c0e0; }
+    .tag-icon.tag-dl { background: rgba(39, 174, 96, 0.1); }
+    .tag-icon.tag-dl svg { fill: #27ae60; }
+
+    /* Health pill */
+    .health-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 2px 7px;
+        border-radius: 10px;
+        font-family: var(--mono, monospace);
+        font-size: 0.5rem;
+        font-weight: 700;
         cursor: pointer;
         transition: all 0.15s;
-        position: relative;
+        flex-shrink: 0;
     }
-    .rec-tag.histo:hover { filter: brightness(1.3); }
-    .rec-tag.histo.histo-ok { background: var(--green-dim); color: var(--green); border: 1px solid rgba(61, 220, 132, 0.3); }
-    .rec-tag.histo.histo-warn { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(232, 160, 32, 0.3); }
-    .rec-tag.histo.histo-bad { background: var(--red-dim); color: var(--red); border: 1px solid rgba(232, 64, 64, 0.3); }
+    .health-pill:hover { filter: brightness(1.3); }
+    .health-pill svg { width: 10px; height: 10px; }
+    .health-pill.hp-ok { background: rgba(39,174,96,0.15); color: var(--green); }
+    .health-pill.hp-ok svg { fill: var(--green); }
+    .health-pill.hp-warn { background: rgba(232,160,32,0.15); color: var(--yellow); }
+    .health-pill.hp-warn svg { fill: var(--yellow); }
+    .health-pill.hp-bad { background: rgba(231,76,60,0.15); color: var(--red); }
+    .health-pill.hp-bad svg { fill: var(--red); }
 
     /* Expanded histogram bar */
     .rec-histo-mini {
@@ -358,9 +390,18 @@
                 const histo = r.histogram || {};
                 if (histo.t1 && histo.t1 > 0) {
                     const events = histo.events || [];
+                    const total = histo.total || 1;
                     const bads = events.filter(e => e[1] === 'b').length;
                     const warns = events.filter(e => e[1] === 'w').length;
-                    const colorCls = bads > 0 ? 'histo-bad' : warns > 0 ? 'histo-warn' : 'histo-ok';
+                    const okPct = Math.round(((total - bads - warns) / total) * 100);
+                    const pillCls = bads > 0 ? 'hp-bad' : warns > 0 ? 'hp-warn' : 'hp-ok';
+
+                    // SVG icons per state
+                    const pillSvg = bads > 0
+                        ? '<svg viewBox="0 0 24 24"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>'
+                        : warns > 0
+                        ? '<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>'
+                        : '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
 
                     // Tooltip
                     let tip = 'Health: ';
@@ -370,15 +411,15 @@
                         const parts = [];
                         if (bads > 0) parts.push(bads + ' gap' + (bads > 1 ? 's' : ''));
                         if (warns > 0) parts.push(warns + ' warn' + (warns > 1 ? 's' : ''));
-                        parts.push(histo.total + ' samples');
+                        parts.push(total + ' samples');
                         tip += parts.join(', ');
                     }
-                    tip += ' - click to expand';
+                    tip += ' — click to expand';
 
-                    histoTagHtml = `<span class="rec-tag histo ${colorCls}" title="${tip}" onclick="toggleHisto(event, ${i})">health</span>`;
+                    histoTagHtml = `<span class="health-pill ${pillCls}" title="${tip}" onclick="toggleHisto(event, ${i})">${pillSvg}${okPct}%</span>`;
 
                     // Build bar segments (hidden until clicked)
-                    const barTip = tip.replace(' - click to expand', '');
+                    const barTip = tip.replace(' — click to expand', '');
                     const SEGS = 80;
                     const t0 = histo.t0 || 0;
                     const dt = (histo.t1 - t0) / SEGS;
@@ -395,14 +436,29 @@
                     histoBarHtml = '<div class="rec-histo-mini" id="histo-bar-' + i + '" title="' + barTip + '">' + segHtml + '</div>';
                 }
 
+                // SVG icons
+                const svgYt = '<svg viewBox="0 0 24 24"><path d="M21.6 7.2s-.2-1.5-.8-2.1c-.8-.8-1.6-.8-2-.9C16 4 12 4 12 4s-4 0-6.8.2c-.4.1-1.2.1-2 .9-.6.6-.8 2.1-.8 2.1S2.2 9 2.2 10.8v1.4c0 1.8.2 3.6.2 3.6s.2 1.5.8 2.1c.8.8 1.8.8 2.2.9 1.6.1 6.6.2 6.6.2s4 0 6.8-.2c.4-.1 1.2-.1 2-.9.6-.6.8-2.1.8-2.1s.2-1.8.2-3.6v-1.4c0-1.8-.2-3.6-.2-3.6zM9.9 15.2V8.8l5.4 3.2-5.4 3.2z"/></svg>';
+                const svgTwitch = '<svg viewBox="0 0 24 24"><path d="M4.3 3L3 6.3v12.4h4.5V21h3l2.7-2.3h4.1L21 15V3H4.3zm14.4 11.2l-3 3H11l-2.7 2.3V17.2H5.3V5.3h13.4v8.9zM15 8.3v4.5h-2.3V8.3H15zm-5.3 0v4.5H7.5V8.3h2.2z"/></svg>';
+                const svgCustom = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5.6 18.4A9 9 0 0 1 3 12a9 9 0 0 1 2.6-6.4"/><path d="M18.4 5.6A9 9 0 0 1 21 12a9 9 0 0 1-2.6 6.4"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>';
+                const svgDl = '<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>';
+
                 // Right-side tags
                 let tags = '';
                 if (histoTagHtml) tags += histoTagHtml;
-                if (r.streamed) tags += '<span class="rec-tag streamed">streamed</span>';
+                if (r.streamed) {
+                    const dest = r.stream_dest || 'custom';
+                    const destMap = {
+                        youtube: { cls: 'tag-yt', svg: svgYt, label: 'Streamed to YouTube' },
+                        twitch: { cls: 'tag-twitch', svg: svgTwitch, label: 'Streamed to Twitch' },
+                        custom: { cls: 'tag-custom', svg: svgCustom, label: 'Streamed to custom RTMP' },
+                    };
+                    const d = destMap[dest] || destMap.custom;
+                    tags += `<span class="tag-icon ${d.cls}" title="${d.label}">${d.svg}</span>`;
+                }
                 if (!r.bumpers_applied && _bumpersAvailable && !(activeRecFile && r.name === activeRecFile)) {
                     tags += '<span class="rec-tag bumpers-add" title="Add intro + outro" onclick="applyBumpers(event, \'' + r.name.replace(/'/g, "\\'") + '\')">+ bumpers</span>';
                 }
-                if (r.downloaded) tags += '<span class="rec-tag downloaded">downloaded</span>';
+                if (r.downloaded) tags += `<span class="tag-icon tag-dl" title="Downloaded">${svgDl}</span>`;
 
                 const esc = r.name.replace(/'/g, "\\'");
 

@@ -5,35 +5,41 @@ Integration with FiteboxHardware library + Web interface support
 Compatible with RPi 4 and RPi 5, gpiod v1 and v2 API
 """
 
-import os
-import sys
-import io
-import time
-import json
-import socket
-import threading
-import signal
 import base64
+import io
+import json
+import logging
+import os
 import random
-import qrcode
+import signal
+import socket
+import sys
+import threading
+import time
+import xml.etree.ElementTree as ET  # noqa: N817
 from datetime import datetime
-from luma.core.interface.serial import i2c
-from luma.oled.device import ssd1306
-from luma.core.render import canvas
-from PIL import ImageFont, ImageDraw, Image
-import xml.etree.ElementTree as ET
+from typing import cast
 
-# Import the FiteboxHardware library if available, otherwise mock it for testing
-try:
-    from lib.fitebox_hardware import FiteboxHardware
+import qrcode  # type: ignore # pylint: disable=import-error
+from luma.core.interface.serial import (  # type: ignore # pylint: disable=import-error # noqa: E501
+    i2c,
+)
+from luma.core.render import (  # type: ignore # pylint: disable=import-error # noqa: E501
+    canvas,
+)
+from luma.oled.device import (  # type: ignore # pylint: disable=import-error # noqa: E501
+    ssd1306,
+)
+from PIL import Image, ImageDraw
+from typing_extensions import TypedDict
 
-    GPIO_AVAILABLE = True
-except ImportError:
-    print("⚠️  FiteboxHardware library not found in lib/")
-    GPIO_AVAILABLE = False
-
-from lib.helpers import clean_text
 from lib import settings
+
+# Import the FiteboxHardware library if available, otherwise
+# mock it for testing
+from lib.fitebox_hardware import FiteboxHardware
+from lib.helpers import clean_text
+from lib.types import KnownNetwork, Recording, Session
 
 # === SETTINGS ===
 I2C_BUS = 1
@@ -46,9 +52,9 @@ WEB_KEY_FILE = settings.WEB_KEY_FILE
 FITEBOX_HEAD = "FITEBOX"
 
 # FITEBox Logo bitmap 128x64 1-bit, base64 encoded
-FITEBOX_LOGO_B64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAIAAAAAAAAAAPwAAAAAAAAHgAAAAAAAAAP4AAAAAAAAD4AAAAAAPyB/+PAAAAAAAA+AAAAAA//x//P4fgAAAHgfgAAAAAf/8//v8/+AAAD+PwAAAAAH//f/H4//wAAAfz4AAAAAD+D//h8P/+AD8D/8AAAAAAfA+54eD//gB/wf/AAAAAADwPgeHg+D8AzvD/gAAAAAB/z4Hh4/AfAb84P8AAAAAAf8eB4f/4DwN/HD/gAAAAAH+HgeH/+B8D/w4/8AAAAAB/B4Hh/Pg/B/gOf/gAAAAAfAeB4fB8/gfwbH3+AAAAAHwHgeHgf/8H8ez4fwAAAAB8B4Hh4D//x/H98D8AAAAAfA+B4eY//+b//fAeAAAAAHgPgeHvP//2//vgAAAAAAB8D4Hh7z+D93/54AAAAAAAfA8B4f4+AfH/+IAAAAAAAHwPAeH+HwHw//AAAAAAAAA8DwHh/h8H8H/gAAAAAAAAPA8B4PwfD+A/wAAAAAAAADwHAOD4H3/AAAAAAAAAAAAQAgDgcA//gAAAAAAAAAAAAAAAAAAP/wAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAfwAAAAAAAAAAAAAAAAAAADgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+FITEBOX_LOGO_B64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAIAAAAAAAAAAPwAAAAAAAAHgAAAAAAAAAP4AAAAAAAAD4AAAAAAPyB/+PAAAAAAAA+AAAAAA//x//P4fgAAAHgfgAAAAAf/8//v8/+AAAD+PwAAAAAH//f/H4//wAAAfz4AAAAAD+D//h8P/+AD8D/8AAAAAAfA+54eD//gB/wf/AAAAAADwPgeHg+D8AzvD/gAAAAAB/z4Hh4/AfAb84P8AAAAAAf8eB4f/4DwN/HD/gAAAAAH+HgeH/+B8D/w4/8AAAAAB/B4Hh/Pg/B/gOf/gAAAAAfAeB4fB8/gfwbH3+AAAAAHwHgeHgf/8H8ez4fwAAAAB8B4Hh4D//x/H98D8AAAAAfA+B4eY//+b//fAeAAAAAHgPgeHvP//2//vgAAAAAAB8D4Hh7z+D93/54AAAAAAAfA8B4f4+AfH/+IAAAAAAAHwPAeH+HwHw//AAAAAAAAA8DwHh/h8H8H/gAAAAAAAAPA8B4PwfD+A/wAAAAAAAADwHAOD4H3/AAAAAAAAAAAAQAgDgcA//gAAAAAAAAAAAAAAAAAAP/wAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAfwAAAAAAAAAAAAAAAAAAADgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="  # noqa: E501
 # OSC Logo bitmap 16x16 1-bit PNG, base64 encoded
-OSC_LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQAAAAA3iMLMAAAAO0lEQVR4nAEwAM//AAfAAA/wAgrMAh4SAjj5AhD8AP8DAv8YAgBkAN//AgD/AhAAAD/+AuD+AvD8Avj4X/sRgaGHoK4AAAAASUVORK5CYII="
+OSC_LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQAAAAA3iMLMAAAAO0lEQVR4nAEwAM//AAfAAA/wAgrMAh4SAjj5AhD8AP8DAv8YAgBkAN//AgD/AhAAAD/+AuD+AvD8Avj4X/sRgaGHoK4AAAAASUVORK5CYII="  # noqa: E501
 
 
 # Pin definition for FiteboxHardware (GPIO BCM, name)
@@ -66,17 +72,83 @@ STATUS_VIEWS = [
     "about",
 ]
 
+logger = logging.getLogger("FiteboxOLED")
 
-class FiteboxOLED:
+
+class StatusData(TypedDict):
+    recording: bool
+    recording_time: int
+    recording_title: str
+    cpu: int
+    memory: int
+    disk: int
+    disk_free_gb: int
+    temp: int
+    gpu_temp: int
+    ip: str
+    network_mode: str
+    network_clients: int
+    uptime: int
+    total_recordings: int
+    last_recording: str
+    errors: list[str]
+    brightness: int
+    adhoc_ssid: str
+    adhoc_password: str
+    web_key: str
+    youtube_streaming: bool
+    recording_author: str
+    recording_phase: str  # "", "detecting", "starting", "recording", "failed"
+    schedule_prev: Session | None  # session dict or None
+    schedule_session: Session | None  # session dict or None
+    schedule_next: Session | None  # session dict or None
+    schedule_room: str
+    recording_list: list[Recording]
+    wifi_enabled: bool
+    eth_enabled: bool
+    wifi_ssid: str
+    wifi_password: str
+    wifi_signal: int
+    wifi_gateway: str
+    wifi_dhcp: bool
+    wifi_mac: str
+    eth_gateway: str
+    eth_dhcp: bool
+    eth_mac: str
+    known_networks: list[KnownNetwork]
+
+
+class MenuItem(TypedDict):
+    label: str
+    action: str
+    session_data: Session | None  # For talk selection, otherwise None
+    disabled: bool  # If True, item is shown but cannot be selected
+    confirm: bool  # If True, requires long press confirmation
+
+
+class Menu(TypedDict):
+    title: str
+    items: list[MenuItem]
+
+
+class WifiCache(TypedDict):
+    ssid: str
+    password: str
+    ip: str
+    gw: str
+
+
+class FiteboxOLED:  # pylint: disable=too-many-instance-attributes
     def __init__(self):
-        # Initialize FiteboxHardware if available, otherwise set to None for testing
-        self.fhw = None
-        if GPIO_AVAILABLE:
-            self.fhw = FiteboxHardware(
-                PINS, consumer="oled_controller", debug=False
-            )
-            if not self.fhw.chip:
-                print("⚠️  Hardware GPIO no disponible")
+        # Initialize FiteboxHardware if available, otherwise set to None
+        # for testing
+        self.fhw = FiteboxHardware(
+            PINS,
+            consumer="oled_controller",
+            debug=False,
+        )
+        if not self.fhw.chip:
+            print("⚠️  Hardware GPIO no disponible")
 
         # Display
         try:
@@ -100,18 +172,24 @@ class FiteboxOLED:
         # Long press state
         self.confirming_action = None
         self.confirmation_progress = 0.0
-        self.press_timers = (
-            {}
-        )  # Track press start times for each button to manage long press confirmation
+        self.press_timers: dict[str, float | None] = {}
         self._info_screen = None  # "wifi_config", "eth_config", "network_info"
-        self._wifi_cache = {"ssid": "", "password": "", "ip": "", "gw": ""}
+        self._info_text: str = ""
+        self._diagnostic_ts: float = 0.0
+        self._diagnostic_type: str = ""
+        self._wifi_cache: WifiCache = {
+            "ssid": "",
+            "password": "",
+            "ip": "",
+            "gw": "",
+        }
 
         # Initialize press timers for each button to None (not pressed)
         for _, name in PINS:
             self.press_timers[name] = None
 
         # Status data
-        self.status_data = {
+        self.status_data: StatusData = {
             "recording": False,
             "recording_time": 0,  # Seconds
             "recording_title": "No title",
@@ -134,11 +212,24 @@ class FiteboxOLED:
             "web_key": "",
             "youtube_streaming": False,
             "recording_author": "",
-            "recording_phase": "",  # "", "detecting", "starting", "recording", "failed"
+            "recording_phase": "",  # "", "detecting", "starting", "recording", "failed" # noqa: E501
             "schedule_prev": None,
             "schedule_session": None,
             "schedule_next": None,
             "schedule_room": "",
+            "recording_list": [],
+            "wifi_enabled": True,
+            "eth_enabled": True,
+            "wifi_ssid": "",
+            "wifi_password": "",
+            "wifi_signal": 0,
+            "wifi_gateway": "",
+            "wifi_dhcp": True,
+            "wifi_mac": "",
+            "eth_gateway": "",
+            "eth_dhcp": True,
+            "eth_mac": "",
+            "known_networks": [],
         }
 
         # Animation
@@ -154,14 +245,19 @@ class FiteboxOLED:
         self.socket_thread = None
         self.clients = []
 
+        # Update state
+        self._update_active: bool = False
+        self._update_percent: int = 0
+        self._update_phase: str = ""
+
         # About view
         self.build_date = self._get_build_date()
         self.osc_logo = self._load_osc_logo()
 
         # Menu definition
-        self.menus = self._build_menus()
+        self.menus: dict[str, Menu] = self._build_menus()
 
-    def play_boot_animation(self):
+    def play_boot_animation(self):  # pylint: disable=too-many-statements
         """Boot animation: circuit traces → logo reveal → version"""
 
         random.seed(42)
@@ -196,7 +292,8 @@ class FiteboxOLED:
                             )
                     else:
                         draw.line(
-                            [(127, y), (127 - draw_len, y)], fill="white"
+                            [(127, y), (127 - draw_len, y)],
+                            fill="white",
                         )
                         if draw_len > 4:
                             draw.rectangle(
@@ -273,11 +370,15 @@ class FiteboxOLED:
         print("✅ Boot animation complete")
 
     def _build_menus(self):
-        """Build menu structure with static items. Dynamic items (titles, files, network) are built separately."""
+        """
+        Build menu structure with static items. Dynamic items (titles, files,
+        network) are built separately.
+        """
         return {
             "quick": {
                 "title": "Quick Actions",
                 "items": [
+                    {"label": "Announce", "action": "menu:announce"},
                     {"label": "Select Title", "action": "menu:titles"},
                     {"label": "Recent Files", "action": "menu:files"},
                     {"label": "System", "action": "menu:system"},
@@ -298,6 +399,10 @@ class FiteboxOLED:
                     {"label": "Display", "action": "menu:display"},
                     {"label": "Power", "action": "menu:power"},
                 ],
+            },
+            "announce": {
+                "title": "Announce",
+                "items": [],  # Built dynamically
             },
             "network": {
                 "title": "Network",
@@ -350,15 +455,32 @@ class FiteboxOLED:
                 self.menus["net_wifi"] = {
                     "title": "WiFi",
                     "items": [
-                        {"label": "Show Config", "action": "show:wifi_config"},
+                        {
+                            "label": "Show Config",
+                            "action": "show:wifi_config",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
+                        },
                         {
                             "label": "Known Networks",
                             "action": "menu:net_wifi_known",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
                         },
-                        {"label": "Mode", "action": "menu:net_wifi_mode"},
+                        {
+                            "label": "Mode",
+                            "action": "menu:net_wifi_mode",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
+                        },
                         {
                             "label": "Disable WiFi",
                             "action": "cmd:network.wifi.disable",
+                            "session_data": None,
+                            "disabled": False,
                             "confirm": True,
                         },
                     ],
@@ -369,10 +491,16 @@ class FiteboxOLED:
                         {
                             "label": "Ad-Hoc Mode",
                             "action": "cmd:network.adhoc",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
                         },
                         {
                             "label": "Client Mode",
                             "action": "cmd:network.client",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
                         },
                     ],
                 }
@@ -383,6 +511,9 @@ class FiteboxOLED:
                         {
                             "label": "Enable WiFi",
                             "action": "cmd:network.wifi.enable",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
                         },
                     ],
                 }
@@ -399,10 +530,18 @@ class FiteboxOLED:
                 self.menus["net_eth"] = {
                     "title": "Ethernet",
                     "items": [
-                        {"label": "Show Config", "action": "show:eth_config"},
+                        {
+                            "label": "Show Config",
+                            "action": "show:eth_config",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
+                        },
                         {
                             "label": "Disable Ethernet",
                             "action": "cmd:network.eth.disable",
+                            "session_data": None,
+                            "disabled": False,
                             "confirm": True,
                         },
                     ],
@@ -414,39 +553,78 @@ class FiteboxOLED:
                         {
                             "label": "Enable Ethernet",
                             "action": "cmd:network.eth.enable",
+                            "session_data": None,
+                            "disabled": False,
+                            "confirm": False,
                         },
                     ],
                 }
 
     def _build_known_networks_menu(self):
         """Build menu of saved WiFi networks from status_data."""
-        known = self.status_data.get("known_networks", [])
-        items = []
+        known: list[KnownNetwork] = self.status_data.get("known_networks", [])
+        items: list[MenuItem] = []
         for net in known:
             name = net.get("name", "")
             items.append(
                 {
                     "label": name[:21],
                     "action": f"cmd:network.known.connect:{name}",
-                }
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
         if not items:
             items.append(
                 {
                     "label": "No saved networks",
                     "action": "goto:status",
+                    "session_data": None,
                     "disabled": True,
-                }
+                    "confirm": False,
+                },
             )
         self.menus["net_wifi_known"] = {
             "title": "Known Networks",
             "items": items,
         }
 
+    def _get_announce_lang(self) -> str:
+        """Get language from current session, default English."""
+        session = self.status_data.get("schedule_session")
+        if isinstance(session, dict):
+            lang = str(session.get("language", "en"))
+            if lang.lower() in ("es", "spanish"):
+                return "es"
+        return "en"
+
+    def _build_announce_menu(self) -> None:
+        """Build announce menu from settings presets in session language.
+        Reversed order so urgent items (1min, Q&A, Thanks) appear first.
+        """
+        lang = self._get_announce_lang()
+        items: list[MenuItem] = []
+        for preset in reversed(settings.ANNOUNCE_PRESETS):
+            text = preset.get(lang, preset["en"])
+            items.append(
+                {
+                    "label": text[:21],
+                    "action": f"cmd:announce:{text}",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
+            )
+        self.menus["announce"] = {
+            "title": "Announce",
+            "items": items,
+        }
+
     def _build_files_menu(self):
         """Build files menu from recording_list in status_data."""
-        rec_list = self.status_data.get("recording_list", [])
-        items = []
+        rec_list: list[Recording] = self.status_data.get("recording_list", [])
+        items: list[MenuItem] = []
         for rec in rec_list:
             name = rec.get("name", "")
             size = rec.get("size_mb", 0)
@@ -456,16 +634,20 @@ class FiteboxOLED:
                 {
                     "label": label,
                     "action": f"cmd:files.delete:{name}",
+                    "session_data": None,
+                    "disabled": False,
                     "confirm": True,  # Long press = delete
-                }
+                },
             )
         if not items:
             items.append(
                 {
                     "label": "No recordings",
                     "action": "goto:status",
+                    "session_data": None,
                     "disabled": True,
-                }
+                    "confirm": False,
+                },
             )
         self.menus["files"] = {
             "title": "Recent Files",
@@ -473,8 +655,10 @@ class FiteboxOLED:
         }
 
     def _build_schedule_menu(self):
-        """Rebuild titles menu from schedule data (prev/current/next) + *ALL*."""
-        items = []
+        """
+        Rebuild titles menu from schedule data (prev/current/next) + *ALL*.
+        """
+        items: list[MenuItem] = []
 
         prev_s = self.status_data.get("schedule_prev")
         cur_s = self.status_data.get("schedule_session")
@@ -483,33 +667,69 @@ class FiteboxOLED:
         if prev_s:
             label = f"< {prev_s['start']} {prev_s['title'][:14]}"
             items.append(
-                {"label": label, "action": "cmd:schedule.select.prev"}
+                {
+                    "label": label,
+                    "action": "cmd:schedule.select.prev",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
 
         if cur_s:
             label = f"* {cur_s['start']} {cur_s['title'][:14]}"
             items.append(
-                {"label": label, "action": "cmd:schedule.select.current"}
+                {
+                    "label": label,
+                    "action": "cmd:schedule.select.current",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
 
         if next_s:
             label = f"> {next_s['start']} {next_s['title'][:14]}"
             items.append(
-                {"label": label, "action": "cmd:schedule.select.next"}
+                {
+                    "label": label,
+                    "action": "cmd:schedule.select.next",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
 
         # Always add *ALL* option if schedule XML exists
         if os.path.exists(settings.SCHEDULE_XML_FILE):
             items.append(
-                {"label": "* ALL TALKS *", "action": "menu:titles_all"}
+                {
+                    "label": "* ALL TALKS *",
+                    "action": "menu:titles_all",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
 
         if not items:
             items.append(
-                {"label": "No schedule data", "action": "goto:status"}
+                {
+                    "label": "No schedule data",
+                    "action": "goto:status",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
             items.append(
-                {"label": "Use web to config", "action": "goto:status"}
+                {
+                    "label": "Use web to config",
+                    "action": "goto:status",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
 
         self.menus["titles"]["items"] = items
@@ -526,8 +746,20 @@ class FiteboxOLED:
             self.menus["titles_all"] = {
                 "title": "All Talks",
                 "items": [
-                    {"label": "No room selected", "action": "goto:status"},
-                    {"label": "Use web to config", "action": "goto:status"},
+                    {
+                        "label": "No room selected",
+                        "action": "goto:status",
+                        "session_data": None,
+                        "disabled": False,
+                        "confirm": False,
+                    },
+                    {
+                        "label": "Use web to config",
+                        "action": "goto:status",
+                        "session_data": None,
+                        "disabled": False,
+                        "confirm": False,
+                    },
                 ],
             }
             return
@@ -540,7 +772,13 @@ class FiteboxOLED:
             self.menus["titles_all"] = {
                 "title": "All Talks",
                 "items": [
-                    {"label": "XML parse error", "action": "goto:status"}
+                    {
+                        "label": "XML parse error",
+                        "action": "goto:status",
+                        "session_data": None,
+                        "disabled": False,
+                        "confirm": False,
+                    },
                 ],
             }
             return
@@ -559,7 +797,9 @@ class FiteboxOLED:
                     continue
                 for event_el in room_el.findall("event"):
                     session = self._parse_event_element(
-                        event_el, date_str, room
+                        event_el,
+                        date_str,
+                        room,
                     )
                     if session:
                         sessions.append(session)
@@ -576,27 +816,32 @@ class FiteboxOLED:
                 days.append((date_str, day_label, sessions))
 
         # Build "titles_all" menu (list of days)
-        day_items = []
+        day_items: list[MenuItem] = []
         for date_str, day_label, sessions in days:
             menu_key = f"titles_day_{date_str}"
             day_items.append(
                 {
                     "label": f"{day_label} ({len(sessions)})",
                     "action": f"menu:{menu_key}",
-                }
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
 
             # Build day submenu (talks sorted by time)
-            talk_items = []
+            talk_items: list[MenuItem] = []
             for session in sessions:
                 start = session.get("start", "??:??")[:5]
                 title = session.get("title", "?")[:13]
                 talk_items.append(
                     {
                         "label": f"{start} {title}",
-                        "action": f"cmd:schedule.select_session",
-                        "session_data": session,  # Store full session for selection
-                    }
+                        "action": "cmd:schedule.select_session",
+                        "session_data": session,
+                        "disabled": False,
+                        "confirm": False,
+                    },
                 )
             self.menus[menu_key] = {
                 "title": day_label[:20],
@@ -605,7 +850,13 @@ class FiteboxOLED:
 
         if not day_items:
             day_items.append(
-                {"label": f"No talks in {room[:14]}", "action": "goto:status"}
+                {
+                    "label": f"No talks in {room[:14]}",
+                    "action": "goto:status",
+                    "session_data": None,
+                    "disabled": False,
+                    "confirm": False,
+                },
             )
 
         self.menus["titles_all"] = {
@@ -615,10 +866,15 @@ class FiteboxOLED:
 
         print(
             f"📅 Built ALL menus: {len(days)} days, "
-            f"{sum(len(d[2]) for d in days)} talks"
+            f"{sum(len(d[2]) for d in days)} talks",
         )
 
-    def _parse_event_element(self, event_el, date_str, room):
+    def _parse_event_element(
+        self,
+        event_el: ET.Element,
+        date_str: str,
+        room: str,
+    ) -> Session | None:
         """Parse a single <event> element into session dict."""
         try:
             title = ""
@@ -660,18 +916,23 @@ class FiteboxOLED:
             if lang_el is not None and lang_el.text:
                 language = lang_el.text.strip()
 
-            return {
-                "event_id": event_el.get("id", ""),
-                "title": title,
-                "author": author,
-                "description": description,
-                "room": room,
-                "date": date_str,
-                "start": start,
-                "duration": duration,
-                "track": track,
-                "language": language,
-            }
+            return Session(
+                event_id=event_el.get("id", ""),
+                title=title,
+                author=author,
+                description=description,
+                room=room,
+                date=date_str,
+                start=start,
+                end="",  # End time can be calculated if needed
+                duration=duration,
+                track=track,
+                language=language,
+                type=event_el.get("type", ""),
+                slug=event_el.get("slug", ""),
+                url=event_el.get("url", ""),
+                updated_at=event_el.get("updated_at", ""),
+            )
         except Exception as e:
             print(f"⚠️ Failed to parse event: {e}")
             return None
@@ -679,39 +940,50 @@ class FiteboxOLED:
     # === SOCKET SERVER ===
 
     def setup_socket(self):
-        """Set up Unix socket server for communication with manager and web server."""
+        """
+        Set up Unix socket server for communication with manager and web server
+        """
         if os.path.exists(settings.SOCKET_PATH):
             os.unlink(settings.SOCKET_PATH)
 
         self.socket_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.socket_server.bind(settings.SOCKET_PATH)
-        os.chmod(settings.SOCKET_PATH, 0o666)
+        os.chmod(settings.SOCKET_PATH, 0o600)
         self.socket_server.listen(5)
 
         print(f"✅ Socket listening on {settings.SOCKET_PATH}")
 
         self.socket_thread = threading.Thread(
-            target=self._socket_accept_loop, daemon=True
+            target=self._socket_accept_loop,
+            daemon=True,
         )
         self.socket_thread.start()
 
     def _socket_accept_loop(self):
         """Accept client connections in a loop and spawn handler threads."""
-        while True:
-            try:
-                client, addr = self.socket_server.accept()
-                print(f"📡 Client connected")
-                self.clients.append(client)
+        if self.socket_server:
+            while True:
+                try:
+                    (client, _) = self.socket_server.accept()
+                    print("📡 Client connected")
+                    self.clients.append(client)
 
-                threading.Thread(
-                    target=self._handle_client, args=(client,), daemon=True
-                ).start()
-            except Exception as e:
-                print(f"❌ Socket accept error: {e}")
-                break
+                    threading.Thread(
+                        target=self._handle_client,
+                        args=(client,),
+                        daemon=True,
+                    ).start()
+                except Exception as e:
+                    print(f"❌ Socket accept error: {e}")
+                    break
+        else:
+            print("⚠️  Socket server not initialized")
 
     def _handle_client(self, client):
-        """Handle messages from a client (manager or web). Messages are JSON lines delimited by \n."""
+        """
+        Handle messages from a client (manager or web). Messages are JSON
+        lines delimited by \n
+        """
         buffer = ""
         try:
             while True:
@@ -741,6 +1013,24 @@ class FiteboxOLED:
                 data = msg.get("data", {})
                 self.status_data.update(data)
 
+                # Rebuild files menu when recording list arrives
+                if "recording_list" in data:
+                    self._build_files_menu()
+
+                # Diagnostic notification
+                if data.get("diagnostic_running"):
+                    self._diagnostic_ts = time.time()
+                    self._diagnostic_type = data.get(
+                        "diagnostic_type",
+                        "system",
+                    )
+
+                # Update progress
+                if "update_running" in data:
+                    self._update_active = bool(data.get("update_running"))
+                    self._update_percent = int(data.get("update_percent", 0))
+                    self._update_phase = str(data.get("update_phase", ""))
+
                 # Rebuild schedule menu if schedule data changed
                 if any(
                     k in data
@@ -765,7 +1055,8 @@ class FiteboxOLED:
 
                 # Broadcast to ALL other clients (web server, etc.)
                 self._broadcast_to_others(
-                    client, {"type": "status_update", "data": self.status_data}
+                    client,
+                    {"type": "status_update", "data": self.status_data},
                 )
 
             elif msg_type == "command":
@@ -773,12 +1064,15 @@ class FiteboxOLED:
                 params = msg.get("params", {})
                 result = self._execute_external_command(action, params)
                 self._send_response(
-                    client, "ok" if result else "error", str(result)
+                    client,
+                    "ok" if result else "error",
+                    str(result),
                 )
 
             elif msg_type == "get_status":
                 self._send_message(
-                    client, {"type": "status", "data": self.status_data}
+                    client,
+                    {"type": "status", "data": self.status_data},
                 )
 
         except json.JSONDecodeError:
@@ -787,20 +1081,28 @@ class FiteboxOLED:
             self._send_response(client, "error", str(e))
 
     def _send_message(self, client, msg):
-        """Send a JSON message to a client, encoded as a line delimited by \n."""
+        """
+        Send a JSON message to a client, encoded as a line delimited by \n.
+        """
         try:
             client.sendall((json.dumps(msg) + "\n").encode("utf-8"))
         except Exception:
             pass
 
     def _send_response(self, client, status, message):
-        """Send a response message to a client with status and message fields."""
+        """
+        Send a response message to a client with status and message fields.
+        """
         self._send_message(
-            client, {"type": "response", "status": status, "message": message}
+            client,
+            {"type": "response", "status": status, "message": message},
         )
 
     def _broadcast_event(self, event_type, data):
-        """Broadcast an event to all clients (manager, web server, etc.) in a consistent format."""
+        """
+        Broadcast an event to all clients (manager, web server, etc.) in
+        a consistent format.
+        """
         msg = {"type": "event", "event": event_type, "data": data}
         for client in self.clients[:]:
             self._send_message(client, msg)
@@ -822,7 +1124,7 @@ class FiteboxOLED:
 
         print(
             f"🌐 Web command: {action}"
-            + (f" params={params}" if params else "")
+            + (f" params={params}" if params else ""),
         )
 
         self._broadcast_event(
@@ -835,7 +1137,8 @@ class FiteboxOLED:
 
     def poll_buttons(self):
         """
-        Use get_button_events from FiteboxHardware to detect button presses and releases.
+        Use get_button_events from FiteboxHardware to detect button presses
+        and releases.
 
         In fitebox_hardware.py:
         - (name, 0) = PRESSED (transition 1→0)
@@ -853,13 +1156,16 @@ class FiteboxOLED:
             if event_status == 0:  # PRESSED
                 self.press_timers[name] = current_time
 
-                # Execute immediate action on press if not in confirmation mode. If in confirmation, only start timer and wait for long press.
+                # Execute immediate action on press if not in confirmation
+                # mode. If in confirmation, only start timer and wait for
+                # long press.
                 if not self.confirming_action:
                     self._handle_interaction(name)
                     print(f"🔘 Button {name} pressed")
 
             elif event_status == 1:  # RELEASED
-                # If SELECT is released during confirmation, cancel the pending action if long press not completed
+                # If SELECT is released during confirmation, cancel the
+                # pending action if long press not completed
                 if name == "select" and self.confirming_action:
                     if self.confirmation_progress < 1.0:
                         print("❌ Long press cancelled (released too early)")
@@ -868,9 +1174,11 @@ class FiteboxOLED:
 
                 self.press_timers[name] = None
 
-        # Handle long press confirmation for "select" button if we're in confirming_action mode
-        if self.confirming_action and self.press_timers.get("select"):
-            duration = time.time() - self.press_timers["select"]
+        # Handle long press confirmation for "select" button if we're in
+        # confirming_action mode
+        select = self.press_timers.get("select")
+        if self.confirming_action and select:
+            duration = time.time() - select
             self.confirmation_progress = min(duration / LONG_PRESS_TIME, 1.0)
 
             if self.confirmation_progress >= 1.0:
@@ -883,7 +1191,10 @@ class FiteboxOLED:
     # === NAVIGATION ===
 
     def _handle_interaction(self, button):
-        """Normal navigation: button presses to navigate menus and trigger actions. If an info screen is active, any button dismisses it."""
+        """
+        Normal navigation: button presses to navigate menus and trigger
+        actions. If an info screen is active, any button dismisses it.
+        """
         # Info screens: any button dismisses
         if self._info_screen:
             self._info_screen = None
@@ -898,14 +1209,20 @@ class FiteboxOLED:
         self._broadcast_event("button_pressed", {"button": button})
 
     def _next_view(self):
-        """Go to the next valid view. Loops around if needed. If no views are valid, stays on current view."""
+        """
+        Go to the next valid view. Loops around if needed. If no views
+        are valid, stays on current view.
+        """
         for _ in range(len(STATUS_VIEWS)):
             self.current_view = (self.current_view + 1) % len(STATUS_VIEWS)
             if self._is_view_available(STATUS_VIEWS[self.current_view]):
                 return
 
     def _prev_view(self):
-        """Go to the previous valid view. Loops around if needed. If no views are valid, stays on current view."""
+        """
+        Go to the previous valid view. Loops around if needed. If no views
+        are valid, stays on current view.
+        """
         for _ in range(len(STATUS_VIEWS)):
             self.current_view = (self.current_view - 1) % len(STATUS_VIEWS)
             if self._is_view_available(STATUS_VIEWS[self.current_view]):
@@ -936,7 +1253,7 @@ class FiteboxOLED:
             # In overview: K1 toggles recording start/stop
             if STATUS_VIEWS[self.current_view] == "overview":
                 if self.status_data.get("recording") or self.status_data.get(
-                    "recording_phase"
+                    "recording_phase",
                 ) in ("detecting", "starting"):
                     self.status_data["recording_phase"] = "stopping"
                     self._execute_command("recording.stop")
@@ -946,7 +1263,7 @@ class FiteboxOLED:
                     )
                     self._execute_command("recording.start")
             else:
-                # Other views: toggle brightness [ probably not reachable code ]
+                # Other views: toggle brightness
                 if self.status_data["brightness"] == 255:
                     self.status_data["brightness"] = 128
                     self.device.contrast(128)
@@ -974,14 +1291,17 @@ class FiteboxOLED:
 
     def menu_down(self):
         """Down in menu: move selection down, with scroll if needed"""
-        menu = self.menus.get(self.current_menu, {})
-        items = menu.get("items", [])
-        if self.selected_index < len(items) - 1:
-            self.selected_index += 1
-            self._adjust_scroll()
+        menu: Menu | None = self.menus.get(self.current_menu)
+        if menu:
+            items = menu.get("items", [])
+            if self.selected_index < len(items) - 1:
+                self.selected_index += 1
+                self._adjust_scroll()
 
     def _adjust_scroll(self):
-        """Adjust scroll to keep selected item visible. Shows 3 items at a time."""
+        """
+        Adjust scroll to keep selected item visible. Shows 3 items at a time.
+        """
         visible_items = 3
         if self.selected_index < self.scroll_offset:
             self.scroll_offset = self.selected_index
@@ -989,25 +1309,48 @@ class FiteboxOLED:
             self.scroll_offset = self.selected_index - visible_items + 1
 
     def menu_select(self):
-        """Seelct current item: execute action or enter submenu. If item has "confirm": True, enter confirmation mode requiring long press."""
-        menu = self.menus.get(self.current_menu, {})
-        items = menu.get("items", [])
+        """
+        Select current item: execute action or enter submenu. If
+        item has "confirm": True, enter confirmation mode requiring
+        long press.
+        """
+        menu: Menu | None = self.menus.get(self.current_menu)
+        if menu:
+            items = menu.get("items", [])
 
-        if self.selected_index < len(items):
-            item = items[self.selected_index]
-            action = item.get("action", "")
+            if self.selected_index < len(items):
+                item = items[self.selected_index]
+                action = item.get("action", "")
 
-            # Block Select Title while recording/preparing
-            if item.get("disabled"):
-                print(f"🚫 Action disabled: {action}")
-                return
+                # Block Select Title while recording/preparing
+                if item.get("disabled"):
+                    print(f"🚫 Action disabled: {action}")
+                    return
 
-            if item.get("confirm", False):
-                self.confirming_action = action
-                self.confirmation_progress = 0.0
-                print(f"⏳ Confirmation required for: {action}")
-            else:
-                self._execute_action(action)
+                # Security: block file delete before confirmation
+                if action.startswith(
+                    "cmd:files.delete:",
+                ) and self.status_data.get("security_disable_delete"):
+                    print(f"🔒 Delete locked: {action}")
+                    self._info_screen = "security_locked"
+                    self._info_text = "Delete disabled"
+                    return
+
+                # Security: block network menus
+                if action.startswith("menu:net") and self.status_data.get(
+                    "security_disable_network",
+                ):
+                    print(f"🔒 Network locked: {action}")
+                    self._info_screen = "security_locked"
+                    self._info_text = "Network locked"
+                    return
+
+                if item.get("confirm", False):
+                    self.confirming_action = action
+                    self.confirmation_progress = 0.0
+                    print(f"⏳ Confirmation required for: {action}")
+                else:
+                    self._execute_action(action)
 
     def menu_back(self):
         """Go back in menu stack, or to status if at root"""
@@ -1020,12 +1363,12 @@ class FiteboxOLED:
             self.selected_index = 0
 
     def enter_menu(self, menu_name):
-        """Enter a menu by name, pushing current menu to stack if not going from status. Resets selection and scroll."""
+        """
+        Enter a menu by name, pushing current menu to stack if not going from
+        status. Resets selection and scroll.
+        """
         if menu_name in self.menus:
-            if (
-                self.current_menu != "status"
-                and self.current_menu != menu_name
-            ):
+            if self.current_menu not in ["status", menu_name]:
                 self.menu_stack.append(self.current_menu)
             self.current_menu = menu_name
             self.selected_index = 0
@@ -1034,7 +1377,8 @@ class FiteboxOLED:
     def _update_menu_disabled_states(self):
         """Update disabled flags on menu items based on current state."""
         is_busy = self.status_data.get("recording") or self.status_data.get(
-            "recording_phase", ""
+            "recording_phase",
+            "",
         ) in ("detecting", "starting")
 
         # Disable "Select Title" in quick menu when recording/preparing
@@ -1047,7 +1391,27 @@ class FiteboxOLED:
         """Execute a menu action"""
 
         if action.startswith("menu:"):
+
+            # Get menu name
             menu_name = action.split(":", 1)[1]
+
+            # Guard: Block network menus if security locked
+            if self.status_data.get("security_disable_network") and (
+                menu_name
+                in (
+                    "network",
+                    "net_wifi",
+                    "net_eth",
+                    "net_wifi_known",
+                    "net_wifi_mode",
+                )
+            ):
+                print(f"🔒 Network locked: {menu_name}")
+                self._info_screen = "security_locked"
+                self._info_text = "Network locked"
+                return
+
+            # Process menus
             if menu_name == "titles":
                 # Request fresh schedule data
                 self._broadcast_event(
@@ -1060,6 +1424,8 @@ class FiteboxOLED:
                 self._build_all_talks_menus()
             elif menu_name in ("net_wifi", "net_eth", "net_wifi_known"):
                 self._build_network_submenu(menu_name)
+            elif menu_name == "announce":
+                self._build_announce_menu()
             elif menu_name == "files":
                 self._broadcast_event(
                     "command_requested",
@@ -1073,17 +1439,35 @@ class FiteboxOLED:
             self.menu_stack = []
 
         elif action.startswith("cmd:"):
+
+            # Get command
             cmd = action.split(":", 1)[1]
+
+            # Block file delete if security locked
+            if cmd.startswith("files.delete:") and self.status_data.get(
+                "security_disable_delete",
+            ):
+                print(f"🔒 Delete locked: {cmd}")
+                self._info_screen = "security_locked"
+                self._info_text = "Delete disabled"
+                return
+
+            # Execute command via socket (manager will handle it)
             self._execute_command(cmd)
+
             # After file delete, stay in files menu and rebuild
             if cmd.startswith("files.delete:"):
                 self._build_files_menu()
-                if self.selected_index >= len(
-                    self.menus.get("files", {}).get("items", [])
-                ):
+                menu: Menu | None = self.menus.get("files")
+                if menu:
+                    items = menu.get("items", [])
+                else:
+                    items = []
+                if self.selected_index >= len(items):
                     self.selected_index = max(0, self.selected_index - 1)
             else:
-                # Go back to status after executing other commands, except file delete which stays in files menu
+                # Go back to status after executing other commands, except
+                # file delete which stays in files menu
                 self.current_menu = "status"
                 self.menu_stack = []
 
@@ -1132,9 +1516,24 @@ class FiteboxOLED:
             print(f"📶 Connect to known: {conn_name}")
             return
 
+        # Parse announce:text → send to display
+        if command.startswith("announce:"):
+            text = command.split(":", 1)[1]
+            self._broadcast_event(
+                "command_requested",
+                {
+                    "command": "announce.show",
+                    "params": {"text": text, "duration": 10},
+                    "source": "oled",
+                },
+            )
+            print(f"📢 Announce from OLED: {text}")
+            return
+
         # Broadcast a clientes (manager picks it up)
         self._broadcast_event(
-            "command_requested", {"command": command, "source": "oled"}
+            "command_requested",
+            {"command": command, "source": "oled"},
         )
 
         # Update local status
@@ -1154,35 +1553,18 @@ class FiteboxOLED:
                 "current": "schedule_session",
                 "next": "schedule_next",
             }
-            session = self.status_data.get(key_map.get(which))
-            if session:
-                self.status_data["recording_title"] = session.get("title", "")
-                self.status_data["recording_author"] = session.get(
-                    "author", ""
-                )
-                print(f"📅 Selected: {session.get('title', '')}")
-                # Broadcast to manager to persist
-                self._broadcast_event(
-                    "command_requested",
-                    {
-                        "command": "schedule.select",
-                        "params": {"session": session},
-                        "source": "oled",
-                    },
-                )
-        elif command == "schedule.select_session":
-            # Direct session selection from *ALL* menu
-            # The session_data is stored in the menu item
-            menu = self.menus.get(self.current_menu, {})
-            items = menu.get("items", [])
-            if self.selected_index < len(items):
-                session = items[self.selected_index].get("session_data")
+            key = key_map.get(which)
+            if key:
+                session = self.status_data.get(key)
                 if session:
+                    session = cast(Session, session)
                     self.status_data["recording_title"] = session.get(
-                        "title", ""
+                        "title",
+                        "",
                     )
                     self.status_data["recording_author"] = session.get(
-                        "author", ""
+                        "author",
+                        "",
                     )
                     print(f"📅 Selected: {session.get('title', '')}")
                     # Broadcast to manager to persist
@@ -1194,6 +1576,33 @@ class FiteboxOLED:
                             "source": "oled",
                         },
                     )
+        elif command == "schedule.select_session":
+            # Direct session selection from *ALL* menu
+            # The session_data is stored in the menu item
+            menu: Menu | None = self.menus.get(self.current_menu)
+            if menu:
+                items = menu.get("items", [])
+                if self.selected_index < len(items):
+                    session = items[self.selected_index].get("session_data")
+                    if session:
+                        self.status_data["recording_title"] = session.get(
+                            "title",
+                            "",
+                        )
+                        self.status_data["recording_author"] = session.get(
+                            "author",
+                            "",
+                        )
+                        print(f"📅 Selected: {session.get('title', '')}")
+                        # Broadcast to manager to persist
+                        self._broadcast_event(
+                            "command_requested",
+                            {
+                                "command": "schedule.select",
+                                "params": {"session": session},
+                                "source": "oled",
+                            },
+                        )
 
     def _show_info(self, info_type):
         """Show an info screen (stays until any button press)."""
@@ -1213,16 +1622,16 @@ class FiteboxOLED:
             self.blink_state = not self.blink_state
             self.last_blink = time.time()
 
-    def draw_status_overview(self):
+    def draw_status_overview(self):  # pylint: disable=too-many-statements
         """View Overview - with recording phase support"""
-        SPINNER = ["-", "\\", "|", "/"]
+        spinner = ["-", "\\", "|", "/"]
         phase = self.status_data.get("recording_phase", "")
         recording = self.status_data.get("recording")
 
         with canvas(self.device) as draw:
             # --- PREPARING: detecting or starting ---
             if phase in ("detecting", "starting"):
-                spin = SPINNER[self.spinner_frame]
+                spin = spinner[self.spinner_frame]
                 draw.text(
                     (5, 2),
                     f"{FITEBOX_HEAD} {spin} PREPARING",
@@ -1238,7 +1647,7 @@ class FiteboxOLED:
                     fill="white",
                 )
                 author = clean_text(
-                    self.status_data.get("recording_author", "")
+                    self.status_data.get("recording_author", ""),
                 )
                 title = clean_text(self.status_data.get("recording_title", ""))
                 if author:
@@ -1252,8 +1661,24 @@ class FiteboxOLED:
             # --- RECORDING ---
             elif recording or phase == "recording":
                 rec_indicator = "o REC" if self.blink_state else "  REC"
+                # Append streaming phase if active
+                stream_phase = str(self.status_data.get("streaming_phase", ""))
+                if self.status_data.get("streaming_active"):
+                    phase_labels = {
+                        "waiting": "WAIT",
+                        "buffering": "BUF",
+                        "intro": "INTRO",
+                        "live": "LIVE",
+                        "draining": "DRAIN",
+                        "outro": "OUTRO",
+                        "closing": "CLOSE",
+                    }
+                    slabel = phase_labels.get(stream_phase, "STREAM")
+                    rec_indicator += f" >>{slabel}"
                 draw.text(
-                    (5, 2), f"{FITEBOX_HEAD} {rec_indicator}", fill="white"
+                    (5, 2),
+                    f"{FITEBOX_HEAD} {rec_indicator}",
+                    fill="white",
                 )
 
                 mins = self.status_data["recording_time"] // 60
@@ -1263,14 +1688,16 @@ class FiteboxOLED:
                 time_str = f"{hours:02d}:{mins:02d}:{secs:02d}"
                 free_str = f"{self.status_data['disk_free_gb']:.0f}GB"
                 draw.text(
-                    (5, 16), f"{time_str} | {free_str} free", fill="white"
+                    (5, 16),
+                    f"{time_str} | {free_str} free",
+                    fill="white",
                 )
 
                 author = clean_text(
-                    self.status_data.get("recording_author", "")
+                    self.status_data.get("recording_author", ""),
                 )
                 title = clean_text(
-                    self.status_data.get("recording_title", "No title")
+                    self.status_data.get("recording_title", "No title"),
                 )
                 t1 = title[:21]
                 t2 = title[21:42]
@@ -1291,7 +1718,7 @@ class FiteboxOLED:
 
             # --- STOPPING ---
             elif phase == "stopping":
-                spin = SPINNER[self.spinner_frame]
+                spin = spinner[self.spinner_frame]
                 draw.text(
                     (5, 2),
                     f"{FITEBOX_HEAD} {spin} STOPPING",
@@ -1306,6 +1733,31 @@ class FiteboxOLED:
                 draw.text((5, 40), "Check logs", fill="white")
                 draw.text((92, 41), "REC K1", fill="white")
                 draw.text((86, 51), "MENU K4", fill="white")
+
+            # --- STREAMING (draining after rec stopped) ---
+            elif self.status_data.get(
+                "streaming_active",
+            ) or self.status_data.get("streaming_draining"):
+                stream_phase = str(self.status_data.get("streaming_phase", ""))
+                phase_labels = {
+                    "draining": "Finishing stream...",
+                    "outro": "Sending outro...",
+                    "closing": "Closing connection...",
+                }
+                spin = spinner[self.spinner_frame]
+                draw.text(
+                    (5, 2),
+                    f"{FITEBOX_HEAD} {spin} STREAM",
+                    fill="white",
+                )
+                draw.text(
+                    (5, 28),
+                    phase_labels.get(
+                        stream_phase,
+                        f"Streaming: {stream_phase}",
+                    ),
+                    fill="white",
+                )
 
             # --- READY (idle) ---
             else:
@@ -1369,7 +1821,8 @@ class FiteboxOLED:
                 fill="white",
             )
 
-            # If we're in Ad-Hoc mode, show SSID and password (for easy connection)
+            # If we're in Ad-Hoc mode, show SSID and password (for easy
+            # connection)
             adhoc_ssid = self.status_data.get("adhoc_ssid", "")
             adhoc_pass = self.status_data.get("adhoc_password", "")
             if mode == "Ad-Hoc" and adhoc_ssid:
@@ -1389,33 +1842,61 @@ class FiteboxOLED:
             disk_pct = self.status_data.get("disk", 0)
             draw.text(
                 (5, 18),
-                f"Free: {free_gb:.1f} GB ({100-disk_pct}%)",
+                f"Free: {free_gb:.1f} GB ({100 - disk_pct}%)",
                 fill="white",
             )
             draw.text(
                 (5, 32),
-                f"Recordings: {self.status_data.get('total_recordings', 0)} files",
+                f"Recordings: {self.status_data.get('total_recordings', 0)} "
+                "files",
                 fill="white",
             )
             last_rec = self.status_data.get("last_recording", "None")[:18]
             draw.text((5, 48), f"Last: {last_rec}", fill="white")
+
+    def _is_credentials_hidden(self) -> bool:
+        """Check if credentials should be hidden on OLED."""
+        return bool(self.status_data.get("security_hide_credentials"))
+
+    def _draw_padlock(self, draw, cx: int, cy: int) -> None:
+        """Draw a padlock icon centered at (cx, cy) on 128x64 OLED."""
+        draw.arc(
+            [cx - 8, cy - 14, cx + 8, cy + 2],
+            180,
+            0,
+            fill="white",
+            width=2,
+        )
+        draw.rectangle(
+            [cx - 10, cy, cx + 10, cy + 14],
+            outline="white",
+            fill="white",
+        )
+        draw.ellipse([cx - 2, cy + 4, cx + 2, cy + 8], fill="black")
+        draw.line([(cx, cy + 8), (cx, cy + 12)], fill="black", width=2)
 
     def draw_status_webkey(self):
         """View Web Key - show the access key for the Web UI"""
         with canvas(self.device) as draw:
             draw.text((5, 2), f"{FITEBOX_HEAD} - Web Access", fill="white")
 
+            # Guard
+            if self._is_credentials_hidden():
+                self._draw_padlock(draw, 64, 30)
+                draw.text((38, 52), "LOCKED", fill="white")
+                return
+
             # Read key from status (sent by manager) or from file
             key = self.status_data.get("web_key", "")
             if not key:
                 try:
-                    with open(WEB_KEY_FILE, "r") as f:
+                    with open(WEB_KEY_FILE, encoding="utf-8") as f:
                         key = f.read().strip()
                 except Exception:
                     key = "------"
 
             # Spacing to make it more readable
-            keysp = " ".join([c for c in key])
+            keysp = " ".join(list(key))
 
             # Show the key with spacing
             draw.text((5, 20), f"Key: {keysp}", fill="white")
@@ -1431,6 +1912,18 @@ class FiteboxOLED:
 
     def draw_qr_web(self):
         """View QR - with the URL for the Web UI"""
+
+        # Guard
+        img = Image.new("1", (128, 64), 0)
+        draw = ImageDraw.Draw(img)
+        draw.text((5, 2), f"{FITEBOX_HEAD} - WEB UI", fill="white")
+
+        if self._is_credentials_hidden():
+            self._draw_padlock(draw, 64, 30)
+            draw.text((38, 52), "LOCKED", fill="white")
+            self.device.display(img)
+            return
+
         ip = self.status_data.get("ip", "0.0.0.0")
         url = f"https://{ip}"
 
@@ -1442,12 +1935,12 @@ class FiteboxOLED:
         key = self.status_data.get("web_key", "")
         if not key:
             try:
-                with open(WEB_KEY_FILE, "r") as f:
+                with open(WEB_KEY_FILE, encoding="utf-8") as f:
                     key = f.read().strip()
             except Exception:
                 key = "------"
 
-        keysp = " ".join([c for c in key])
+        keysp = " ".join(list(key))
         draw.text((5, 44), f"{keysp}", fill="white")
 
         qr_img = self._make_qr_big(url, 48)
@@ -1460,7 +1953,10 @@ class FiteboxOLED:
         self.device.display(img)
 
     def draw_qr_wifi(self):
-        """View QR - to connect to Ad-Hoc WiFi. Shows SSID and password, and QR code with WiFi config."""
+        """
+        View QR - to connect to Ad-Hoc WiFi. Shows SSID and password, and
+        QR code with WiFi config.
+        """
         ssid = self.status_data.get("adhoc_ssid", "fitebox_ap")
         password = self.status_data.get("adhoc_password", "")
 
@@ -1484,9 +1980,13 @@ class FiteboxOLED:
         self.device.display(img)
 
     def _make_qr(self, data):
-        """Create a QR code image from the given data, optimized for the blue zone (48x48). Uses qrcode library to generate a QR code, then resizes it to fit the blue zone if needed."""
+        """
+        Create a QR code image from the given data, optimized for the blue
+        zone (48x48). Uses qrcode library to generate a QR code, then resizes
+        it to fit the blue zone if needed.
+        """
         try:
-            qr = qrcode.QRCode(
+            qr = qrcode.QRCode(  # type: ignore[attr-defined]
                 version=None,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=2,
@@ -1495,11 +1995,15 @@ class FiteboxOLED:
             qr.add_data(data)
             qr.make(fit=True)
             img = qr.make_image(
-                fill_color="white", back_color="black"
+                fill_color="white",
+                back_color="black",
             ).convert("1")
             # Resize to fit blue zone (48px max)
             if img.size[1] > 48:
-                img = img.resize((48, 48), Image.NEAREST)
+                img = img.resize(
+                    (48, 48),
+                    Image.NEAREST,  # pylint: disable=no-member
+                )
             print(f"📱 QR generated: {img.size}")
             return img
         except Exception as e:
@@ -1509,7 +2013,7 @@ class FiteboxOLED:
     def _make_qr_big(self, data, target_size=48):
         """Generate QR maximized to target_size with pixel-perfect scaling."""
         try:
-            qr = qrcode.QRCode(
+            qr = qrcode.QRCode(  # type: ignore[attr-defined]
                 version=None,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=1,
@@ -1518,16 +2022,22 @@ class FiteboxOLED:
             qr.add_data(data)
             qr.make(fit=True)
             img = qr.make_image(
-                fill_color="white", back_color="black"
+                fill_color="white",
+                back_color="black",
             ).convert("1")
             w, h = img.size
             # Only scale by integer factor (keeps pixels crisp = scannable)
             scale = target_size // max(w, h)
             if scale >= 2:
-                img = img.resize((w * scale, h * scale), Image.NEAREST)
-            # If scale=1, keep original size (don't blur with non-integer resize)
+                img = img.resize(
+                    (w * scale, h * scale),
+                    Image.NEAREST,  # pylint: disable=no-member
+                )
+            # If scale=1, keep original size (don't blur with non-integer
+            # resize)
             print(
-                f"📱 QR big: {img.size} (v{qr.version}, {w}mod, scale={max(scale,1)})"
+                f"📱 QR big: {img.size} (v{qr.version}, "
+                f"{w}mod, scale={max(scale, 1)})",
             )
             return img
         except Exception as e:
@@ -1542,13 +2052,25 @@ class FiteboxOLED:
             self._draw_eth_config()
         elif self._info_screen == "network_info":
             self._draw_network_info()
+        elif self._info_screen == "security_locked":
+            with canvas(self.device) as draw:
+                self._draw_padlock(draw, 64, 16)
+                draw.text(
+                    (20, 42),
+                    self._info_text or "LOCKED",
+                    fill="white",
+                )
+            # Auto-dismiss after 2 seconds
+            if time.time() - self.last_activity > 2.0:
+                self._info_screen = None
+                self._info_text = ""
 
     def _draw_wifi_config(self):
         """WiFi config: SSID (yellow), IP, Gateway, signal bar + QR."""
-        sd = self.status_data
+        sd: StatusData = self.status_data
 
         # Read with cache fallback (prevents flickering when nmcli is slow)
-        ssid = sd.get("ssid", "") or sd.get("adhoc_ssid", "")
+        ssid = sd.get("wifi_ssid", "") or sd.get("adhoc_ssid", "")
         password = sd.get("wifi_password", "") or sd.get("adhoc_password", "")
         ip = sd.get("ip", "")
         gw = sd.get("wifi_gateway", "")
@@ -1574,11 +2096,15 @@ class FiteboxOLED:
         ip = ip or "0.0.0.0"
         gw = gw or "--"
 
-        signal = sd.get("wifi_signal", 0)
+        wifi_signal = sd.get("wifi_signal", 0)
         dhcp = sd.get("wifi_dhcp", True)
 
         # Signal percentage: -30=100%, -90=0%
-        sig_pct = max(0, min(100, (signal + 90) * 100 // 60)) if signal else 0
+        sig_pct = (
+            max(0, min(100, (wifi_signal + 90) * 100 // 60))
+            if wifi_signal
+            else 0
+        )
 
         img = Image.new("1", (128, 64), 0)
         d = ImageDraw.Draw(img)
@@ -1606,11 +2132,11 @@ class FiteboxOLED:
 
         # Line 4 (y=48): Signal bar + percentage on right
         bar_x, bar_y, bar_w, bar_h = 2, 50, 48, 10
-        d.rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], outline=1)
+        d.rectangle((bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), outline=1)
         if sig_pct > 0:
             fill_w = max(1, (bar_w - 2) * sig_pct // 100)
             d.rectangle(
-                [bar_x + 1, bar_y + 1, bar_x + 1 + fill_w, bar_y + bar_h - 1],
+                (bar_x + 1, bar_y + 1, bar_x + 1 + fill_w, bar_y + bar_h - 1),
                 fill=1,
             )
         # Percentage text to the right of bar
@@ -1649,6 +2175,44 @@ class FiteboxOLED:
             if not wlan_ip and not eth_ip:
                 draw.text((5, y), "No network", fill="white")
 
+    def draw_update_progress(self) -> None:
+        """Draw update progress screen with progress bar."""
+        with canvas(self.device) as draw:
+            draw.text((5, 2), f"{FITEBOX_HEAD} - UPDATE", fill="white")
+
+            # Phase text
+            phase_labels = {
+                "pulling": "Downloading...",
+                "building": "Building...",
+                "restarting": "Restarting...",
+            }
+            label = phase_labels.get(
+                self._update_phase,
+                self._update_phase.upper(),
+            )
+            draw.text((5, 20), label, fill="white")
+
+            # Progress bar
+            bar_x, bar_y = 5, 38
+            bar_w, bar_h = 100, 10
+            draw.rectangle(
+                [bar_x, bar_y, bar_x + bar_w, bar_y + bar_h],
+                outline="white",
+            )
+            filled = int(bar_w * self._update_percent / 100)
+            if filled > 0:
+                draw.rectangle(
+                    [bar_x, bar_y, bar_x + filled, bar_y + bar_h],
+                    fill="white",
+                )
+
+            # Percentage
+            draw.text(
+                (bar_x + bar_w + 5, bar_y),
+                f"{self._update_percent}%",
+                fill="white",
+            )
+
     def draw_system_action(self, action):
         """Reboot/Shutdown screen with countdown"""
         with canvas(self.device) as draw:
@@ -1664,14 +2228,21 @@ class FiteboxOLED:
                 draw.text((5, 40), "~10 seconds", fill="white")
 
     def draw_system_off(self):
-        """Unplanned shutdown screen - shown when container is stopped without proper shutdown (e.g. docker stop). Informs user that system was not properly shut down and may be in an inconsistent state, and that a restart is needed to resume normal operation."""
+        """
+        Unplanned shutdown screen - shown when container is stopped without
+        proper shutdown (e.g. docker stop). Informs user that system was not
+        properly shut down and may be in an inconsistent state, and that a
+        restart is needed to resume normal operation.
+        """
         with canvas(self.device) as draw:
             draw.text((5, 2), "SYSTEM OFF", fill="white")
             draw.text((5, 24), "Container stopped", fill="white")
             draw.text((5, 44), "Restart to resume", fill="white")
 
     def draw_confirmation(self):
-        """Draw confirmation screen with progress bar for long-press actions."""
+        """
+        Draw confirmation screen with progress bar for long-press actions.
+        """
         with canvas(self.device) as draw:
             draw.text((5, 2), "Confirm Action?", fill="white")
             draw.text((5, 18), "Hold SELECT", fill="white")
@@ -1689,10 +2260,20 @@ class FiteboxOLED:
             draw.text((5, 52), f"{pct}%", fill="white")
 
     def draw_menu(self):
-        """Draw the current menu, with support for disabled items (e.g. Select Title while recording). Disabled items are shown dimmed with a hint (e.g. strikethrough or "N/A"). The menu data is taken from self.menus based on self.current_menu."""
-        menu = self.menus.get(self.current_menu, {})
-        title = menu.get("title", "Menu")
-        items = menu.get("items", [])
+        """
+        Draw the current menu, with support for disabled items (e.g. Select
+        Title while recording). Disabled items are shown dimmed with a hint
+        (e.g. strikethrough or "N/A"). The menu data is taken from self.menus
+        based on self.current_menu.
+        """
+
+        menu: Menu | None = self.menus.get(self.current_menu)
+        if menu:
+            title = menu.get("title", "Menu")
+            items = menu.get("items", [])
+        else:
+            title = "Menu"
+            items = []
 
         # Dynamically disable "Select Title" when recording
         self._update_menu_disabled_states()
@@ -1714,7 +2295,8 @@ class FiteboxOLED:
                     if disabled:
                         # Selected but disabled: dashed outline, dimmed
                         draw.rectangle(
-                            (2, y - 1, 126, y + 11), outline="white"
+                            (2, y - 1, 126, y + 11),
+                            outline="white",
                         )
                         # Show label with strikethrough hint
                         draw.text((5, y), f"~ {label[:16]}", fill="white")
@@ -1739,18 +2321,26 @@ class FiteboxOLED:
                 bar_height = 40
                 bar_y = 18
                 scroll_ratio = self.scroll_offset / max(
-                    len(items) - visible_items, 1
+                    len(items) - visible_items,
+                    1,
                 )
                 indicator_y = bar_y + int(scroll_ratio * (bar_height - 5))
                 draw.rectangle(
-                    (124, bar_y, 126, bar_y + bar_height), outline="white"
+                    (124, bar_y, 126, bar_y + bar_height),
+                    outline="white",
                 )
                 draw.rectangle(
-                    (124, indicator_y, 126, indicator_y + 5), fill="white"
+                    (124, indicator_y, 126, indicator_y + 5),
+                    fill="white",
                 )
 
     def check_idle_timeout(self):
-        """Check idle timeout: if we're not in the main status view and there's been no activity for a certain time, return to status view. This prevents getting stuck in a submenu if the user walks away without returning to status."""
+        """
+        Check idle timeout: if we're not in the main status view and there's
+        been no activity for a certain time, return to status view. This
+        prevents getting stuck in a submenu if the user walks away without
+        returning to status.
+        """
         if self.current_menu != "status":
             if time.time() - self.last_activity > IDLE_TIMEOUT:
                 print("⏱️  Idle timeout - returning to status")
@@ -1762,12 +2352,15 @@ class FiteboxOLED:
     def _get_build_date(self):
         """Get build date as DDMMYY string from BUILD_DATE file."""
         try:
-            with open(os.path.join(settings.APP_DIR, "BUILD_DATE")) as f:
+            with open(
+                os.path.join(settings.APP_DIR, "BUILD_DATE"),
+                encoding="utf-8",
+            ) as f:
                 return f.read().strip()
         except Exception:
             try:
                 mtime = os.path.getmtime(
-                    os.path.join(settings.APP_DIR, "VERSION.txt")
+                    os.path.join(settings.APP_DIR, "VERSION.txt"),
                 )
                 return datetime.fromtimestamp(mtime).strftime("%d%m%y")
             except Exception:
@@ -1776,7 +2369,10 @@ class FiteboxOLED:
     def _get_mac(self, interface):
         """Read MAC address from sysfs."""
         try:
-            with open(f"/sys/class/net/{interface}/address") as f:
+            with open(
+                f"/sys/class/net/{interface}/address",
+                encoding="utf-8",
+            ) as f:
                 return f.read().strip().upper()
         except Exception:
             return "--:--:--:--:--:--"
@@ -1784,7 +2380,10 @@ class FiteboxOLED:
     def _get_iface_state(self, interface):
         """Check if network interface is operationally up."""
         try:
-            with open(f"/sys/class/net/{interface}/operstate") as f:
+            with open(
+                f"/sys/class/net/{interface}/operstate",
+                encoding="utf-8",
+            ) as f:
                 return f.read().strip() == "up"
         except Exception:
             return False
@@ -1795,14 +2394,19 @@ class FiteboxOLED:
             data = base64.b64decode(OSC_LOGO_B64)
             logo = Image.open(io.BytesIO(data)).convert("1")
             if logo.size != (16, 16):
-                logo = logo.resize((16, 16), Image.NEAREST)
+                logo = logo.resize(
+                    (16, 16),
+                    Image.NEAREST,  # pylint: disable=no-member
+                )
             return logo
         except Exception as e:
             logger.warning(f"Failed to load OSC logo: {e}")
             return None
 
     def draw_about(self):
-        """Draw About screen: version, build date, network IDs, web key, OSC logo."""
+        """
+        Draw About screen: version, build date, network IDs, web key, OSC logo.
+        """
         img = Image.new("1", (128, 64), 0)
         draw = ImageDraw.Draw(img)
 
@@ -1821,7 +2425,8 @@ class FiteboxOLED:
         # draw.text((110, 17), eth_status, fill=1)
 
         # Ethernet MAC
-        draw.text((0, 26), f"· {self._get_mac('eth0')}", fill=1)
+        if not self._is_credentials_hidden():
+            draw.text((0, 26), f"· {self._get_mac('eth0')}", fill=1)
 
         # WiFi IP + state
         wlan_ip = self.status_data.get("ip", "")
@@ -1831,22 +2436,24 @@ class FiteboxOLED:
         # draw.text((110, 35), wlan_status, fill=1)
 
         # WiFi MAC
-        draw.text((0, 44), f"· {self._get_mac('wlan0')}", fill=1)
+        if not self._is_credentials_hidden():
+            draw.text((0, 44), f"· {self._get_mac('wlan0')}", fill=1)
 
         # Leer key del status (enviada por manager) o del archivo
-        key = self.status_data.get("web_key", "")
-        if not key:
-            try:
-                with open(WEB_KEY_FILE, "r") as f:
-                    key = f.read().strip()
-            except Exception:
-                key = "------"
+        if not self._is_credentials_hidden():
+            key = self.status_data.get("web_key", "")
+            if not key:
+                try:
+                    with open(WEB_KEY_FILE, encoding="utf-8") as f:
+                        key = f.read().strip()
+                except Exception:
+                    key = "------"
 
-        # Spacing to make it more readable
-        keysp = " ".join([c for c in key])
+            # Spacing to make it more readable
+            keysp = " ".join(list(key))
 
-        # Show the key with spacing
-        draw.text((0, 53), f"Key: {keysp}", fill=1)
+            # Show the key with spacing
+            draw.text((0, 53), f"Key: {keysp}", fill=1)
 
         # === OSC LOGO: 16x16 bottom-right ===
         if self.osc_logo:
@@ -1856,13 +2463,26 @@ class FiteboxOLED:
 
     # === MAIN LOOP ===
 
-    def run(self):
+    def run(self):  # pylint: disable=too-many-statements
         """Main loop"""
 
         # Set a signal handler
-        def handle_signal(signum, frame):
-            print(f"\n🛑 Signal {signum} received. Cleaning up...")
-            sys.exit(0)  # Esto disparará el bloque 'finally'
+        def handle_signal(signum, frame):  # pylint: disable=unused-argument
+            print(f"\n🛑 Signal {signum} received. Cleaning up...", flush=True)
+            if not self._system_halting:
+                try:
+                    self.draw_system_off()
+                    time.sleep(0.5)
+                except Exception:
+                    pass
+
+            # Prevent luma from blanking screen on exit
+            try:
+                self.device.cleanup = lambda *args, **kwargs: None
+            except Exception:
+                pass
+
+            sys.exit(0)
 
         signal.signal(signal.SIGTERM, handle_signal)
         signal.signal(signal.SIGINT, handle_signal)
@@ -1889,11 +2509,31 @@ class FiteboxOLED:
                 self.update_blink()
                 self.spinner_frame = (self.spinner_frame + 1) % 4
 
-                # Update recording time every second while recording (or in starting phase, which is when the timer starts)
+                # Update recording time every second while recording (or
+                # in starting phase, which is when the timer starts)
                 if time.time() - last_second >= 1.0:
                     if self.status_data.get("recording"):
                         self.status_data["recording_time"] += 1
                     last_second = time.time()
+
+                # Update progress overlay (takes over display)
+                if self._update_active:
+                    self.draw_update_progress()
+                    time.sleep(0.2)
+                    continue
+
+                # Diagnostic notification overlay (2 seconds)
+                if time.time() - self._diagnostic_ts < 2.0:
+                    with canvas(self.device) as draw:
+                        draw.text((5, 2), FITEBOX_HEAD, fill="white")
+                        draw.text((15, 26), "DIAGNOSTIC", fill="white")
+                        draw.text(
+                            (25, 42),
+                            f"({self._diagnostic_type})",
+                            fill="white",
+                        )
+                    time.sleep(0.2)
+                    continue
 
                 # Draw appropriate screen based on state
                 if self._system_halting:
@@ -1934,11 +2574,15 @@ class FiteboxOLED:
         """Explicit resource cleanup"""
         print("🧹 Cleaning up resources...")
 
-        # Show SYSTEM OFF only on unexpected stop (Docker SIGTERM, not user-initiated)
+        # Show SYSTEM OFF only on unexpected stop (Docker SIGTERM, not
+        # user-initiated)
         if not self._system_halting:
             try:
                 self.draw_system_off()
-                print("📺 SYSTEM OFF displayed")
+                time.sleep(0.5)
+                # Prevent luma from blanking screen on exit
+                self.device.cleanup = lambda *args, **kwargs: None
+                print("📺 SYSTEM OFF displayed", flush=True)
             except Exception:
                 pass
 
@@ -1946,21 +2590,23 @@ class FiteboxOLED:
             try:
                 self.socket_server.close()
                 print("✅ Socket closed")
-            except:
+            except Exception:
                 pass
         if os.path.exists(settings.SOCKET_PATH):
             try:
                 os.unlink(settings.SOCKET_PATH)
                 print(f"✅ Removed {settings.SOCKET_PATH}")
-            except:
+            except Exception:
                 pass
         if self.fhw:
-            # Force close GPIO chip if the library allows it, to prevent resource leaks that can cause issues on restart (e.g. "RuntimeError: No GPIO chip found" on subsequent runs)
+            # Force close GPIO chip if the library allows it, to prevent
+            # resource leaks that can cause issues on restart
+            # (e.g. "RuntimeError: No GPIO chip found" on subsequent runs)
             try:
                 if hasattr(self.fhw, "chip") and self.fhw.chip:
                     self.fhw.chip.close()
                     print("✅ GPIO Chip closed")
-            except:
+            except Exception:
                 pass
 
 

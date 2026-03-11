@@ -64,6 +64,34 @@
         </div>
     </div>
 
+    <!-- === SYSTEM UPDATE === -->
+    <div class="card" id="update-card">
+        <div class="card-header">
+            <span class="card-title">
+                <span style="color:var(--yellow,#e8a020);font-size:1.4rem">&#9889;</span>
+                System Update
+            </span>
+            <span class="text-xs text-dim text-mono" id="update-mode-badge"></span>
+        </div>
+        <div id="update-idle">
+            <div style="display:flex;align-items:center;gap:12px">
+                <span class="text-sm text-mono">v<b id="update-current-ver">--</b></span>
+                <span class="text-sm text-mono" id="update-latest" style="display:none">Latest: <b id="update-latest-ver"></b></span>
+                <div id="update-status" class="text-sm text-dim text-mono"></div>
+                <div style="flex:1"></div>
+                <button class="btn btn-sm" id="update-check-btn" onclick="checkUpdate()">Check for updates</button>
+                <button class="btn btn-sm btn-primary" id="update-start-btn" style="display:none" onclick="startUpdate()">Update now</button>
+            </div>
+        </div>
+        <div id="update-progress" style="display:none">
+            <div class="text-sm text-mono" id="update-phase-text" style="margin-bottom:8px;color:var(--cyan)"></div>
+            <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px">
+                <div id="update-progress-bar" style="height:100%;background:var(--green);width:0%;transition:width 0.5s"></div>
+            </div>
+            <div class="text-xs text-dim text-mono" id="update-msg"></div>
+        </div>
+    </div>
+
     <!-- === NETWORK === -->
     <div class="card">
         <div class="card-header">
@@ -186,14 +214,46 @@
         </div>
     </div>
 
-    <!-- === DIAGNOSTICS === -->
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Diagnostics</span>
+    <!-- === DIAGNOSTICS + SECURITY === -->
+    <div class="diag-sec-grid">
+        <!-- Diagnostics -->
+        <div class="card" style="margin:0">
+            <div class="card-header">
+                <span class="card-title">Diagnostics</span>
+            </div>
+            <p class="text-sm text-dim mb-8">Run hardware checks to verify all components are working correctly.</p>
+            <button class="btn btn-primary" onclick="openDiagnostics()">Run Full Diagnostic</button>
         </div>
-        <p class="text-sm text-dim mb-8">Run hardware checks to verify all components are working correctly.</p>
-        <button class="btn btn-primary" onclick="openDiagnostics()">Run Full Diagnostic</button>
+
+        <!-- Security -->
+        <div class="card" style="margin:0">
+            <div class="card-header">
+                <span class="card-title">&#128274; Security</span>
+            </div>
+            <p class="text-sm text-dim mb-8">OLED display restrictions. Web UI access is not affected.</p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+                <label class="sec-row">
+                    <span class="sec-label">Show OLED credentials<br><span class="sec-desc">Key, QR codes and MACs shown on physical display</span></span>
+                    <input type="checkbox" id="sec-show-credentials" checked onchange="saveSecurity()">
+                    <span class="sec-toggle"></span>
+                    <span class="sec-lock" id="sec-lock-cred">&#128275;</span>
+                </label>
+                <label class="sec-row">
+                    <span class="sec-label">Enable OLED file deletion<br><span class="sec-desc">Allow recording deletion from OLED buttons</span></span>
+                    <input type="checkbox" id="sec-enable-delete" checked onchange="saveSecurity()">
+                    <span class="sec-toggle"></span>
+                    <span class="sec-lock" id="sec-lock-delete">&#128275;</span>
+                </label>
+                <label class="sec-row">
+                    <span class="sec-label">Enable OLED network config<br><span class="sec-desc">Allow network changes from OLED menus</span></span>
+                    <input type="checkbox" id="sec-enable-network" checked onchange="saveSecurity()">
+                    <span class="sec-toggle"></span>
+                    <span class="sec-lock" id="sec-lock-network">&#128275;</span>
+                </label>
+            </div>
+        </div>
     </div>
+
 </div>
 
 <!-- Media Preview Modal (bumper video / background image) -->
@@ -642,6 +702,55 @@
     .diag-footer {
         display: flex; gap: 8px; padding: 10px 16px;
         border-top: 1px solid var(--border); justify-content: flex-end;
+    }
+    /* Diagnostics + Security grid */
+    .diag-sec-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+    @media (max-width: 640px) {
+        .diag-sec-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Security toggles */
+    .sec-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 6px 0;
+        cursor: pointer;
+        position: relative;
+    }
+    .sec-row input[type="checkbox"] { opacity: 0; width: 0; height: 0; position: absolute; }
+    .sec-toggle {
+        position: relative; display: inline-block;
+        width: 32px; height: 16px; flex-shrink: 0;
+        background: var(--border); border-radius: 8px; transition: 0.2s;
+    }
+    .sec-toggle:before {
+        content: ""; position: absolute; height: 12px; width: 12px;
+        left: 2px; bottom: 2px; background: var(--text-dim);
+        border-radius: 50%; transition: 0.2s;
+    }
+    .sec-row input:checked + .sec-toggle { background: var(--green-dim); }
+    .sec-row input:checked + .sec-toggle:before {
+        transform: translateX(16px); background: var(--green);
+    }
+    .sec-label {
+        font-family: var(--mono); font-size: 0.72rem; color: var(--text);
+        flex: 1;
+    }
+    .sec-desc {
+        font-size: 0.58rem; color: var(--text-dim); font-weight: 400;
+    }
+    .sec-lock {
+        font-size: 1.2rem;
+        width: 24px;
+        text-align: center;
+        flex-shrink: 0;
+        transition: color 0.2s;
     }
 </style>
 
@@ -1361,6 +1470,277 @@
         }).catch(() => {
             FITEBOX.toast('Copy failed - try manually', 'info');
         });
+    }
+
+    // === SECURITY SETTINGS ===
+
+    function updateLockIcons() {
+        const pairs = [
+            ['sec-show-credentials', 'sec-lock-cred'],
+            ['sec-enable-delete', 'sec-lock-delete'],
+            ['sec-enable-network', 'sec-lock-network'],
+        ];
+        for (const [checkId, lockId] of pairs) {
+            const on = document.getElementById(checkId).checked;
+            const el = document.getElementById(lockId);
+            el.innerHTML = on ? '&#128994;' : '&#128274;';
+        }
+    }
+
+    async function loadSecurity() {
+        try {
+            const res = await FITEBOX.get('/api/system/security');
+            document.getElementById('sec-show-credentials').checked = !res.hide_credentials;
+            document.getElementById('sec-enable-delete').checked = !res.disable_delete;
+            document.getElementById('sec-enable-network').checked = !res.disable_network;
+            updateLockIcons();
+        } catch (e) {
+            console.error('Security load error:', e);
+        }
+    }
+
+    async function saveSecurity() {
+        const settings = {
+            hide_credentials: !document.getElementById('sec-show-credentials').checked,
+            disable_delete: !document.getElementById('sec-enable-delete').checked,
+            disable_network: !document.getElementById('sec-enable-network').checked,
+        };
+        updateLockIcons();
+        try {
+            await FITEBOX.post('/api/system/security', settings);
+            FITEBOX.toast('Security settings saved', 'success');
+        } catch (e) {
+            FITEBOX.toast('Failed to save security settings', 'error');
+        }
+    }
+
+    loadSecurity();
+
+    // === SYSTEM UPDATE ===
+
+    async function checkUpdate() {
+        const status = document.getElementById('update-status');
+        const startBtn = document.getElementById('update-start-btn');
+        const checkBtn = document.querySelector('[onclick="checkUpdate()"]');
+        status.innerHTML = '<span style="color:var(--text-dim)">Connecting to server...</span>';
+        startBtn.style.display = 'none';
+        checkBtn.disabled = true;
+        checkBtn.textContent = 'Checking...';
+
+        try {
+            const res = await FITEBOX.get('/api/system/update/check');
+            document.getElementById('update-current-ver').textContent = res.current_version || '--';
+            document.getElementById('update-mode-badge').textContent = (res.mode === 'official') ? 'Docker Hub' : 'Local build';
+
+            if (res.error) {
+                status.innerHTML = '<span style="color:var(--red)">' + res.error + '</span>';
+            } else if (res.update_available) {
+                let msg = '&#9989; Update available';
+                if (res.latest_version && res.latest_version !== res.current_version) {
+                    msg += ' — v' + res.latest_version;
+                    document.getElementById('update-latest-ver').textContent = res.latest_version;
+                    document.getElementById('update-latest').style.display = '';
+                }
+                if (res.commits_behind) {
+                    msg += ' (' + res.commits_behind + ' commits behind)';
+                }
+                status.innerHTML = '<span style="color:var(--green)">' + msg + '</span>';
+                startBtn.style.display = '';
+            } else {
+                status.innerHTML = '<span style="color:var(--green)">&#10003; System is up to date</span>';
+                document.getElementById('update-latest').style.display = 'none';
+            }
+        } catch (e) {
+            status.innerHTML = '<span style="color:var(--red)">Check failed: ' + e.message + '</span>';
+        } finally {
+            checkBtn.disabled = false;
+            checkBtn.textContent = 'Check for updates';
+        }
+    }
+
+    let _updatePollId = null;
+
+    async function startUpdate() {
+        if (!confirm('Start system update? The web interface will go offline during restart.')) return;
+
+        document.getElementById('update-idle').style.display = 'none';
+        document.getElementById('update-progress').style.display = '';
+
+        try {
+            await FITEBOX.post('/api/system/update/start');
+            _updatePollId = setInterval(pollUpdateProgress, 1000);
+        } catch (e) {
+            document.getElementById('update-phase-text').textContent = 'Failed to start update';
+            document.getElementById('update-idle').style.display = '';
+            document.getElementById('update-progress').style.display = 'none';
+        }
+    }
+
+    async function pollUpdateProgress() {
+        try {
+            const p = await FITEBOX.get('/api/system/update/progress');
+            document.getElementById('update-progress-bar').style.width = p.percent + '%';
+            const phaseLabels = {
+                pulling: 'Downloading...', building: 'Building image...',
+                restarting: 'Restarting container...', error: 'Error'
+            };
+            document.getElementById('update-phase-text').textContent =
+                (phaseLabels[p.phase] || p.phase) + ' ' + p.percent + '%';
+            document.getElementById('update-msg').textContent = p.message || '';
+
+            if (p.phase === 'restarting' && p.percent >= 95) {
+                clearInterval(_updatePollId);
+                showRestartOverlay();
+            }
+
+            if (p.error) {
+                clearInterval(_updatePollId);
+                document.getElementById('update-phase-text').innerHTML =
+                    '<span style="color:var(--red)">' + p.error + '</span>';
+                setTimeout(() => {
+                    document.getElementById('update-idle').style.display = '';
+                    document.getElementById('update-progress').style.display = 'none';
+                }, 5000);
+            }
+        } catch (e) {
+            // Server offline (restarting) — keep polling
+        }
+    }
+
+    // Load version + check on page init
+    (async () => {
+        try {
+            const res = await FITEBOX.get('/api/system/update/check');
+            document.getElementById('update-current-ver').textContent = res.current_version || '--';
+            document.getElementById('update-mode-badge').textContent = (res.mode === 'official') ? 'Docker Hub' : 'Local build';
+
+            if (res.error) {
+                document.getElementById('update-status').innerHTML = '<span style="color:var(--red)">' + res.error + '</span>';
+            } else if (res.update_available) {
+                let msg = '&#9989; Update available';
+                if (res.latest_version && res.latest_version !== res.current_version) {
+                    msg += ' — v' + res.latest_version;
+                    document.getElementById('update-latest-ver').textContent = res.latest_version;
+                    document.getElementById('update-latest').style.display = '';
+                }
+                if (res.commits_behind) {
+                    msg += ' (' + res.commits_behind + ' commits)';
+                }
+                document.getElementById('update-status').innerHTML = '<span style="color:var(--green)">' + msg + '</span>';
+                document.getElementById('update-start-btn').style.display = '';
+            } else {
+                document.getElementById('update-status').innerHTML = '<span style="color:var(--green)">&#10003; Up to date</span>';
+            }
+        } catch (e) {}
+    })();
+
+    function showRestartOverlay() {
+        const overlay = document.createElement('div');
+        overlay.id = 'restart-overlay';
+        overlay.innerHTML = `
+            <div style="position:fixed;inset:0;background:var(--bg-body,#1a1a2e);z-index:9999;
+                         display:flex;flex-direction:column;align-items:center;overflow-y:auto;padding:40px 20px">
+                <div style="width:100%;max-width:860px">
+                    <div style="text-align:center;margin-bottom:24px">
+                        <img src="/statics/logo_login.png" alt="FITEBOX"
+                             style="height:50px;margin-bottom:12px;opacity:0.9">
+                        <div style="font-family:var(--mono);color:var(--green,#27ae60);font-size:1.1rem;
+                                    font-weight:700;margin-bottom:8px">&#128259; Restarting...</div>
+                        <div style="width:200px;height:4px;background:var(--border,#333);border-radius:2px;
+                                    overflow:hidden;margin:0 auto 6px">
+                            <div style="height:100%;background:var(--green,#27ae60);width:100%;
+                                        animation:restartPulse 1.5s ease-in-out infinite"></div>
+                        </div>
+                        <div style="font-family:var(--mono);color:var(--text-dim,#888);font-size:0.7rem"
+                             id="restart-status">Waiting for server...</div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+                        <div style="background:var(--bg-card,#252540);border:1px solid var(--border,#3a3a5c);
+                                    border-left:3px solid var(--green,#27ae60);border-radius:12px;padding:20px">
+                            <div style="color:var(--green,#27ae60);font-family:var(--mono);font-size:0.75rem;
+                                        font-weight:700;margin-bottom:10px">▸ About FITEBOX</div>
+                            <p style="color:#999;font-family:var(--mono);font-size:0.65rem;line-height:1.7;
+                                      margin-bottom:12px">
+                                Autonomous conference recording appliance built on Raspberry Pi.
+                                Captures, composes and streams multi-source video with zero cloud dependency.
+                            </p>
+                            <div style="color:#888;font-family:var(--mono);font-size:0.58rem;line-height:1.8">
+                                <div>● Multi-camera compositing (HDMI + USB)</div>
+                                <div>● OLED display + hardware buttons</div>
+                                <div>● Live streaming to YouTube, Twitch &amp; RTMP</div>
+                                <div>● Schedule integration (Pentabarf XML)</div>
+                                <div>● Web dashboard for remote control</div>
+                                <div>● Ad-hoc WiFi &amp; wired networking</div>
+                            </div>
+                            <div style="display:flex;gap:10px;margin-top:14px">
+                                <a href="https://github.com/juanmitaboada/fitebox" target="_blank"
+                                   style="display:inline-block;border:1px solid var(--border,#3a3a5c);color:var(--green,#27ae60);
+                                          font-family:var(--mono);font-size:0.55rem;padding:4px 12px;border-radius:4px;
+                                          text-decoration:none">GitHub</a>
+                                <a href="https://github.com/juanmitaboada/fitebox/blob/main/LICENSE" target="_blank"
+                                   style="display:inline-block;border:1px solid var(--border,#3a3a5c);color:var(--green,#27ae60);
+                                          font-family:var(--mono);font-size:0.55rem;padding:4px 12px;border-radius:4px;
+                                          text-decoration:none">Apache 2.0</a>
+                            </div>
+                        </div>
+                        <div style="background:var(--bg-card,#252540);border:1px solid var(--border,#3a3a5c);
+                                    border-left:3px solid var(--cyan,#40c0e0);border-radius:12px;padding:20px">
+                            <div style="color:var(--cyan,#40c0e0);font-family:var(--mono);font-size:0.75rem;
+                                        font-weight:700;margin-bottom:10px">▸ OpenSouthCode</div>
+                            <p style="color:#999;font-family:var(--mono);font-size:0.65rem;line-height:1.7;
+                                      margin-bottom:12px">
+                                FITEBOX was born to record the talks at
+                                <span style="color:#e0e0e0;font-weight:600">OpenSouthCode</span>, a free and
+                                non-commercial conference celebrating open source software, hardware and culture
+                                in Málaga, Spain since 2016.
+                            </p>
+                            <p style="color:#999;font-family:var(--mono);font-size:0.65rem;line-height:1.7">
+                                Held annually at <span style="color:#e0e0e0;font-weight:600">La Térmica</span>,
+                                it brings together developers, educators, artists and families around the values
+                                of transparency, collaboration and technological independence. Over 50 sessions
+                                across multiple tracks, completely free and organized by volunteers.
+                            </p>
+                            <div style="display:flex;gap:10px;margin-top:14px">
+                                <a href="https://opensouthcode.org" target="_blank"
+                                   style="display:inline-block;border:1px solid rgba(64,192,224,0.4);color:var(--cyan,#40c0e0);
+                                          font-family:var(--mono);font-size:0.55rem;padding:4px 12px;border-radius:4px;
+                                          text-decoration:none">opensouthcode.org</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="font-family:var(--mono);color:#555;font-size:0.5rem;text-align:center">
+                        Made with <span style="color:#e74c3c">♥</span> in Málaga by OpenSouthCode
+                    </div>
+                </div>
+            </div>
+            <style>@keyframes restartPulse { 0%,100% { opacity:0.3; } 50% { opacity:1; } }</style>
+        `;
+        document.body.appendChild(overlay);
+        waitForServer();
+    }
+
+    function waitForServer() {
+        const status = document.getElementById('restart-status');
+        let attempts = 0;
+
+        function poll() {
+            attempts++;
+            if (status) status.textContent = 'Waiting for server... (' + attempts + ')';
+
+            fetch('/', { signal: AbortSignal.timeout(3000) })
+                .then(r => {
+                    if (r.ok) {
+                        if (status) status.textContent = 'Server is back! Reloading...';
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        setTimeout(poll, 2000);
+                    }
+                })
+                .catch(() => setTimeout(poll, 2000));
+
+        }
+
+        setTimeout(poll, 5000);
     }
 </script>
 {% endblock %}

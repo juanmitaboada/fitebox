@@ -25,7 +25,7 @@ write_state() {
     local MODE="$1"
     local IP="${2:-}"
     local CONNECTED_SSID="${3:-}"
-    
+
     cat > /tmp/fitebox_network_state.json << STATEEOF
 {
     "mode": "${MODE}",
@@ -54,11 +54,11 @@ fi
 # --- 3. If no SSID given, just re-activate previous connection ---
 if [ -z "${SSID}" ]; then
     echo "⏳ Restoring previous WiFi connection..."
-    
+
     # Let NetworkManager auto-connect
     nmcli device set "${IFACE}" autoconnect yes
     nmcli device connect "${IFACE}" 2>/dev/null || true
-    
+
     # Wait for connection (max 15s)
     for i in $(seq 1 15); do
         IP=$(nmcli -t -f IP4.ADDRESS device show "${IFACE}" 2>/dev/null | head -1 | cut -d: -f2 | cut -d/ -f1)
@@ -69,7 +69,7 @@ if [ -z "${SSID}" ]; then
         fi
         sleep 1
     done
-    
+
     echo "⚠️  Could not restore previous connection"
     exit 1
 fi
@@ -80,11 +80,11 @@ echo "⏳ Connecting to: ${SSID}"
 # Build nmcli connect command
 if [ -n "${STATIC_IP}" ]; then
     echo "   Mode: Static IP (${STATIC_IP})"
-    
+
     # Check if connection profile already exists
     CON_NAME="fitebox-${SSID}"
     nmcli connection delete "${CON_NAME}" 2>/dev/null || true
-    
+
     # Prefix length from netmask
     PREFIX="24"
     case "${NETMASK}" in
@@ -94,7 +94,7 @@ if [ -n "${STATIC_IP}" ]; then
         255.255.255.128) PREFIX="25" ;;
         255.255.255.192) PREFIX="26" ;;
     esac
-    
+
     # Create connection with static IP
     if [ -n "${PASSWORD}" ]; then
         nmcli connection add \
@@ -121,12 +121,12 @@ if [ -n "${STATIC_IP}" ]; then
             ipv4.gateway "${GATEWAY}" \
             ipv4.dns "${DNS}"
     fi
-    
+
     nmcli connection up "${CON_NAME}"
-    
+
 else
     echo "   Mode: DHCP"
-    
+
     # Simple connect (DHCP)
     if [ -n "${PASSWORD}" ]; then
         nmcli device wifi connect "${SSID}" password "${PASSWORD}" ifname "${IFACE}"

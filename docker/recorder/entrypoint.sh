@@ -5,13 +5,16 @@
 
 if [ "$#" -eq 0 ]; then
 
+    # Stop plymouth
+    plymouth quit
+
     make screen_boot
 
     # Function to be executed On SIGTERM
     cleanup() {
         echo "🛑 Received SIGTERM from Docker..."
-        make screen_off
-        exit 0
+        kill -TERM "$PID"    # Send SIGTERM to supervisord
+        wait "$PID"          # Wait for supervisord to stop all children
     }
 
     # "Authorize" the script to capture the shutdown signal from Docker
@@ -60,7 +63,7 @@ echo "Checking hardware access..."
 
 # Video devices
 if ls /dev/video* >/dev/null 2>&1; then
-    echo "  ✅ Video: $(ls /dev/video* | tr '\n' ' ')"
+    echo "  ✅ Video: $(find /dev -maxdepth 1 -name 'video*' -printf '%p ' 2>/dev/null)"
 else
     echo "  ⚠️ No video devices"
 fi
@@ -110,6 +113,6 @@ if [ "$#" -eq 0 ]; then
     make screen_off
 
 else
-    echo "Executing custom command: $@"
+    echo "Executing custom command: $*"
     exec "$@"
 fi

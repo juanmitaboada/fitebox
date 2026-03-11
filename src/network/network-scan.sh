@@ -23,22 +23,22 @@ nmcli -t -f SSID,SIGNAL,SECURITY,FREQ device wifi list ifname "${IFACE}" 2>/dev/
 while IFS=: read -r SSID SIGNAL SECURITY FREQ; do
     # Skip empty SSIDs (hidden networks)
     [ -z "${SSID}" ] && continue
-    
+
     # Skip duplicates (nmcli can show same SSID on different channels)
     # We just output all and let the consumer deduplicate
-    
+
     if [ "${FIRST}" = true ]; then
         FIRST=false
     else
         echo ","
     fi
-    
+
     # Determine band from frequency
     BAND="2.4GHz"
     if [ "${FREQ%%.*}" -gt 5000 ] 2>/dev/null; then
         BAND="5GHz"
     fi
-    
+
     # Clean security string
     SEC="Open"
     case "${SECURITY}" in
@@ -47,7 +47,7 @@ while IFS=: read -r SSID SIGNAL SECURITY FREQ; do
         *WPA*)  SEC="WPA" ;;
         *WEP*)  SEC="WEP" ;;
     esac
-    
+
     printf '  {"ssid": "%s", "signal": "%s", "security": "%s", "band": "%s"}' \
         "${SSID}" "${SIGNAL}" "${SEC}" "${BAND}"
 done

@@ -145,20 +145,20 @@ DIAG_OUTPUT="/tmp/test_diagnostic_$(date +%s).txt"
 
 if timeout 30 "$SCRIPT" > "$DIAG_OUTPUT" 2>&1; then
     pass "Script executed successfully"
-    
+
     # Verificar contenido
     if grep -q "FITEBOX DIAGNOSTIC REPORT" "$DIAG_OUTPUT"; then
         pass "Output contains header"
     else
         fail "Output missing header"
     fi
-    
+
     if grep -q "Environment: $ENV" "$DIAG_OUTPUT"; then
         pass "Environment detected correctly: $ENV"
     else
         fail "Environment detection failed"
     fi
-    
+
     # Contar secciones
     SECTIONS=$(grep -c "^---" "$DIAG_OUTPUT")
     if [ $SECTIONS -gt 10 ]; then
@@ -166,7 +166,7 @@ if timeout 30 "$SCRIPT" > "$DIAG_OUTPUT" 2>&1; then
     else
         warn "Only $SECTIONS sections (expected 15+)"
     fi
-    
+
     echo ""
     echo "Sample output (first 30 lines):"
     echo "================================"
@@ -183,13 +183,13 @@ echo ""
 # === TEST 7: Verificar permisos ===
 if [ "$ENV" = "container" ]; then
     echo "TEST 7: Container permissions"
-    
+
     if [ -c /dev/mem ]; then
         pass "Privileged mode enabled"
     else
         warn "Not running in privileged mode"
     fi
-    
+
     if [ "$(id -u)" = "0" ]; then
         pass "Running as root"
     else

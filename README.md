@@ -12,7 +12,7 @@ One box per room. A volunteer plugs it in before the first talk, collects record
 
 ```
   License .... Apache 2.0
-  Version .... 1.0
+  Version .... 3.0.0
   Status ..... Production-ready - deploying at OpenSouthCode 2026, Málaga
   Authors .... Juanmi Taboada, David Santos
   Repository . https://github.com/juanmitaboada/fitebox
@@ -22,23 +22,19 @@ One box per room. A volunteer plugs it in before the first talk, collects record
 
 ## Table of Contents
 
-  0. [Why FITEBOX Exists](#0-why-fitebox-exists)
-  1. [What You Get](#1-what-you-get)
-  2. [Hardware Requirements](#2-hardware-requirements)
-  3. [Software Setup](#3-software-setup)
-  4. [First Boot](#4-first-boot)
-  5. [Configuration](#5-configuration)
-  6. [Recording a Talk](#6-recording-a-talk)
-  7. [Live Streaming (Optional)](#7-live-streaming-optional)
-  8. [Managing Recordings](#8-managing-recordings)
-  10. [Troubleshooting](#10-troubleshooting)
-  11. [API Reference](#11-api-reference)
-  13. [Credits & Acknowledgments](#13-credits--acknowledgments)
-  14. [License](#14-license)
+  1. [Why FITEBOX Exists](#1-why-fitebox-exists)
+  2. [What You Get](#2-what-you-get)
+  3. [Hardware Requirements](#3-hardware-requirements)
+  4. [Software Setup](#4-software-setup)
+  5. [First Boot](#5-first-boot)
+  6. [Documentation](#documentation) - Configuration, Recording, Streaming, Architecture, Troubleshooting, API
+  7. [Project](#project) - Changelog, Contributing, Code of Conduct, Security Policy
+  8. [Credits & Acknowledgments](#credits--acknowledgments)
+  9. [License](#license)
 
 ---
 
-## 0. Why FITEBOX Exists
+## 1. Why FITEBOX Exists
 
 Community tech conferences run on volunteer time and sponsor money. Recording talks is essential - speakers deserve an audience beyond the room, and attendees want to revisit sessions they missed - but professional recording services eat budgets alive. We know because it happened to us.
 
@@ -57,7 +53,7 @@ What you see in this repository is the result. It works. It has been tested.
 
 ---
 
-## 1. What You Get
+## 2. What You Get
 
 All your videos properly recorded under a layout like this one:
 
@@ -66,22 +62,22 @@ All your videos properly recorded under a layout like this one:
 A fully configured FITEBOX gives you:
 
 - **Composite 1080p recording** - presenter's screen (via HDMI capture) as the main image, speaker camera as picture-in-picture, your conference branding as the background frame, and talk title + speaker name as text overlays.
-  
+
 - **Automatic audio mixing** - room microphone plus HDMI audio from the presenter's laptop, combined automatically. Plug in one mic or two sources,
   the system adapts.
-  
+
 - **Crash-resistant MKV files** - recordings survive power failures. Even if someone trips over the power cable, everything recorded up to that point is
   recoverable.
-  
+
 - **Web UI from your phone** - read the 6-character access key from the OLED screen, type it in your phone browser, and you have full control: start/stop recording, monitor health, preview the feed, manage files, configure everything.
-  
+
 - **OLED + physical buttons** - no phone needed for basic operation. Navigate  menus, start recording, check status, all from four buttons on the box.
-  
+
 - **Live streaming** - optional RTMP streaming to YouTube, Twitch, or any custom server. Branded intro/outro bumpers, single persistent connection,
   zero extra CPU cost for video (audio re-encoded to fix timestamp issues).
-  
+
 - **Conference schedule integration** - import your Frab/Pentabarf schedule XML (the standard used by FOSDEM, CCC, OpenSouthCode, and many others) and FITEBOX auto-fills talk titles and speaker names based on room and time.
-  
+
 - **Network flexibility** - connect to the venue WiFi, create its own hotspot if there is no WiFi, or use Ethernet. All configurable from the web UI or
   OLED menus.
 
@@ -89,7 +85,7 @@ A fully configured FITEBOX gives you:
 
 ---
 
-## 2. Hardware Requirements
+## 3. Hardware Requirements
 
 ![Fitebox Core Hardware](doc/img/fitebox_hardware_pack.jpg)
 
@@ -98,9 +94,9 @@ companion build guide: [FITEBOX Build Guide - juanmitaboada.com](https://www.jua
 
 ---
 
-## 3. Software Setup
+## 4. Software Setup
 
-### 3.1 Flash OS directly to the NVMe SSD
+### 4.1 Flash OS directly to the NVMe SSD
 
 FITEBOX boots directly from the NVMe SSD - no SD card needed for daily use. Connect the NVMe SSD (via a USB adapter or the PCIe HAT on another Pi) and flash **Raspberry Pi OS Lite (64-bit, Debian 12 Bookworm)** to it using [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 
@@ -130,7 +126,7 @@ SSH in and update:
 sudo apt update && sudo apt upgrade -y
 ```
 
-### 3.2 Enable I2C (for the OLED display)
+### 4.2 Enable I2C (for the OLED display)
 
 ```bash
 sudo raspi-config
@@ -159,7 +155,7 @@ The OLED+buttons integrated module connects to the GPIO header with an 8-wire ri
 
 No external resistors needed - buttons use internal pull-ups via `gpiod`.
 
-### 3.3 Create the recordings directory
+### 4.3 Create the recordings directory
 
 Since the OS and recordings live on the same NVMe SSD, just create the recordings directory on the root filesystem:
 
@@ -168,7 +164,82 @@ sudo mkdir -p /recordings
 sudo chown -R 1000:1000 /recordings
 ```
 
-### 3.4 Clone and Run Setup
+### 4.4 Choose your deployment method
+
+FITEBOX can be deployed in two ways:
+
+- **Option A: Quick Deploy** - download a pre-built Docker image. No
+  compilation, no cloning the full repository. Recommended for production.
+- **Option B: Build from Source** - clone the repository and build the Docker
+  image locally. Recommended for development and customization.
+
+Both options require running the host setup script first.
+
+---
+
+### 4.5 Option A: Quick Deploy (pre-built image)
+
+Download the setup script and run it:
+
+```bash
+sudo apt-get install -y git curl
+git clone --depth 1 https://github.com/juanmitaboada/fitebox.git /tmp/fitebox-setup
+cd /tmp/fitebox-setup
+sudo ./bin/setup.sh
+```
+
+**A reboot is required** after setup ([what setup.sh does](#37-what-setupsh-does)).
+
+After reboot, create a deployment directory:
+
+```bash
+mkdir -p ~/fitebox && cd ~/fitebox
+
+# Download production compose file and nginx config
+curl -LO https://raw.githubusercontent.com/juanmitaboada/fitebox/main/deploy/docker-compose.yml
+curl -LO https://raw.githubusercontent.com/juanmitaboada/fitebox/main/deploy/nginx.conf
+
+# Create data directories
+mkdir -p recordings config data log certs
+
+# Copy TLS certificates from setup (or generate new ones)
+cp /tmp/fitebox-setup/certs/* certs/ 2>/dev/null || \
+  openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+    -keyout certs/fitebox.key -out certs/fitebox.crt \
+    -subj "/C=ES/ST=Fitebox/O=Fitebox/CN=fitebox.local"
+
+# Create .env with your user (so recordings are owned by you, not root)
+echo "USER_UID=$(id -u)" > .env
+echo "USER_GID=$(id -g)" >> .env
+
+# Pull and start
+docker compose pull
+docker compose up -d
+```
+
+That is it. FITEBOX is running.
+
+The image is available at:
+
+- `ghcr.io/juanmitaboada/fitebox` (GitHub Container Registry)
+- `docker.io/br0th3r/fitebox` (Docker Hub)
+
+To update to a new version:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+To pin a specific version instead of `latest`, edit `docker-compose.yml`:
+
+```yaml
+image: ghcr.io/juanmitaboada/fitebox:1.0
+```
+
+---
+
+### 4.6 Option B: Build from Source (for development)
 
 ```bash
 sudo apt-get install git
@@ -177,30 +248,52 @@ cd fitebox
 sudo ./bin/setup.sh
 ```
 
-The setup script must be run with `sudo`. It detects the real user (via `$SUDO_USER`) and performs the following:
+**A reboot is required** after setup ([what setup.sh does](#37-what-setupsh-does)).
 
-1. Installs base tools: `curl`, `wget`, `git`, `build-essential`, `v4l-utils`, `alsa-utils`, `bc`, `jq`.
-2. Installs Docker and the Compose plugin, adds your user to the `docker` group.
-3. Disables PulseAudio and PipeWire system-wide (masks services, disables autospawn) so they do not block ALSA access.
-4. Tunes USB buffers (`usbfs_memory_mb=1000`), kernel parameters (`vm.swappiness=10`, dirty ratios, scheduler), and file limits (65536).
-5. Enables cgroups for Docker memory management in the boot command line.
-6. On Raspberry Pi 5, enables **PCIe Gen 3** for faster SSD throughput and sets boot to console autologin.
-7. Installs the FITEBOX Plymouth boot splash theme (if `plymouth/` directory exists).
-8. Configures passwordless sudo for `reboot`, `shutdown`, and Plymouth messages.
-9. Creates the directory structure (`recordings/`, `log/`, `run/`) with correct ownership.
-10. Generates self-signed TLS certificates for HTTPS.
-11. Creates the `.env` file with your UID/GID so Docker containers create files owned by your user (not root).
-
-**A reboot is required** after setup to apply kernel and PCIe changes.
-
-### 3.5 Build and Run
+After reboot, build and run:
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
-The container starts in **privileged mode** - it needs direct access to video devices (`/dev/video*`), I2C (`/dev/i2c-*`), GPIO (`/dev/gpiochip*`), ALSA
+To publish your local build to the registries (maintainers only):
+
+```bash
+make publish
+```
+
+---
+
+### 4.7 What setup.sh does
+
+The setup script must be run with `sudo`. It detects the real user (via
+`$SUDO_USER`) and performs the following:
+
+1. Installs base tools: `curl`, `wget`, `git`, `build-essential`, `v4l-utils`,
+   `alsa-utils`, `bc`, `jq`.
+2. Installs Docker and the Compose plugin, adds your user to the `docker` group.
+3. Disables PulseAudio and PipeWire system-wide (masks services, disables
+   autospawn) so they do not block ALSA access.
+4. Tunes USB buffers (`usbfs_memory_mb=1000`), kernel parameters
+   (`vm.swappiness=10`, dirty ratios, scheduler), and file limits (65536).
+5. Enables cgroups for Docker memory management in the boot command line.
+6. On Raspberry Pi 5, enables **PCIe Gen 3** for faster SSD throughput and
+   sets boot to console login required (disable autologin).
+7. Installs the FITEBOX Plymouth boot splash theme (if `plymouth/` directory
+   exists).
+8. Configures passwordless sudo for `reboot`, `shutdown`, and Plymouth
+   messages.
+9. Creates the directory structure (`recordings/`, `log/`, `run/`) with
+   correct ownership.
+10. Generates self-signed TLS certificates for HTTPS.
+11. Creates the `.env` file with your UID/GID so Docker containers create
+    files owned by your user (not root).
+
+### Container details
+
+The container starts in **privileged mode** - it needs direct access to video
+devices (`/dev/video*`), I2C (`/dev/i2c-*`), GPIO (`/dev/gpiochip*`), ALSA
 audio (`/dev/snd/*`), and thermal sensors. This is not optional.
 
 Persistent data is stored in Docker volumes mapped to:
@@ -213,7 +306,7 @@ Persistent data is stored in Docker volumes mapped to:
 | `/fitebox/run` | Runtime state (sockets, PIDs, health) |
 | `/fitebox/log` | Service logs |
 
-### 3.6 Diagnostics
+### 4.8 Diagnostics
 
 Before your first recording, run the diagnostic tools to verify all hardware is detected:
 
@@ -249,13 +342,14 @@ PRESS/RELEASE events at 100Hz polling.
 
 ---
 
-## 4. First Boot
+## 5. First Boot
 
-When the container starts, three services come up in order:
+When the container starts, four services come up in order:
 
-1. **OLED controller** - the display lights up with the FITEBOX logo, then shows the system status.
-2. **FITEBOX manager** - starts polling hardware (CPU, temperature, disk, network) and broadcasting status.
-3. **Web server** - FastAPI on port 8080, ready for connections.
+1. **Display daemon** - takes over the HDMI output for status screens and announcements.
+2. **OLED controller** - the display lights up with the FITEBOX logo, then shows the system status.
+3. **FITEBOX manager** - starts polling hardware (CPU, temperature, disk, network) and broadcasting status.
+4. **Web server** - FastAPI on port 8080, ready for connections.
 
 ### Reading the access key
 
@@ -280,293 +374,29 @@ Enter the 6-character key. You are in.
 
 ---
 
-## 5. Configuration
+## Documentation
 
-All configuration is done from the **System** page in the web UI. Do this before the event.
-
-![Fitebox Web UI System](doc/img/fitebox_screen_system.jpeg)
-
-### 5.1 Network
-
-From the System page you can:
-
-- Scan for WiFi networks and connect (supports open and WPA)
-- Create a FITEBOX hotspot (`FITEBOX_AP`) for direct phone connection
-- View Ethernet status
-- Set static IP if your venue needs it
-
-For live streaming, Ethernet is recommended. WiFi works fine for the web UI.
-
-### 5.2 Conference Schedule
-
-If your conference uses **Frab/Pentabarf schedule format** (most open-source conferences do), paste the schedule URL and hit Download. Then select the room this FITEBOX is assigned to.
-
-```
-Example: https://www.opensouthcode.org/conferences/opensouthcode2025/schedule.xml
-```
-
-Once loaded, the dashboard will automatically show the current talk based on time and room. When you start recording, the speaker name and talk title are auto-filled and rendered as text overlays in the recording.
-
-### 5.3 Background Image
-
-Upload a **1920×1080 PNG** that serves as the branded frame for your composite recording. This is the canvas behind the slides and speaker camera. Example:
-
-![Fitebox Background Image](doc/img/background_1080p.png)
-
-The composite layout:
-
-![](doc/img/fitebox_layout.jpg)
-
-### 5.4 Bumpers (Intro/Outro)
-
-Upload optional branded video clips (your conference logo animation, sponsor reel, etc.) that will be prepended and appended to recordings.
-
-The upload workflow:
-
-1. Upload any video format.
-2. FITEBOX probes it with ffprobe and shows you the specs.
-3. If the format matches (1080p, 30fps, H.264, AAC 48kHz) → instant copy.
-4. If it does not match → shows you the differences, you confirm, it re-encodes.
-5. A thumbnail preview is extracted.
-
-Bumpers are used in two places: as intro/outro segments during live streaming, and for offline concatenation with finished recordings.
-
-### 5.5 Diagnostics
-
-The System page includes a diagnostics section that checks hardware, audio, video, network, and storage. Run it before the event to catch problems early.
+  - [Configuration](doc/configuration.md) - Network, schedule, background, bumpers, diagnostics, security, self-update
+  - [Recording a Talk](doc/recording.md) - Web UI, OLED buttons, engine internals, monitoring, announcements to projector
+  - [Live Streaming](doc/streaming.md) - YouTube, Twitch, custom RTMP, single-connection architecture
+  - [Managing Recordings](doc/recordings.md) - Playback, download, bumper concatenation, batch operations
+  - [Architecture](doc/architecture.md) - Container layout, process communication, design decisions
+  - [Troubleshooting](doc/troubleshooting.md) - Power, video, audio, encoding, OLED, USB, recovery
+  - [API Reference](doc/api.md) - REST endpoints, WebSocket protocol, HMAC authentication
+  - [Diagnostics Guide](doc/diagnostics.md) - How to use the diagnostic tools, interpret results, and fix common issues
 
 ---
 
-## 6. Recording a Talk
+## Project
 
-### From the web UI
-
-1. Open the **Dashboard**.
-2. Verify the current talk is shown (if schedule is loaded).
-3. Verify cameras and audio on the **Hardware** page - you can see live MJPEG previews of both cameras and audio level meters, all at zero CPU cost.
-4. Go back to Dashboard, hit the big **Start Recording** button.
-
-![](doc/img/fitebox_dashboard_recording.jpeg)
-
-### From the physical buttons
-
-Navigate the OLED menu to the recording option and press Select. The OLED will show recording status (elapsed time, file size) while it runs.
-
-### What happens under the hood
-
-The recording engine (v36) launches a single long-running FFmpeg process that:
-
-1. Reads three video inputs simultaneously: your background PNG, the HDMI capture card, and the USB webcam.
-2. Composites them into the 1920×1080 layout described above.
-3. Overlays the speaker name and talk title as text.
-4. Mixes audio from all detected sources (room mic + HDMI audio if available).
-5. Encodes to H.264 (software, `libx264 -preset ultrafast -crf 28`) and AAC audio.
-6. Writes to a **Matroska (.mkv)** container on the SSD.
-
-MKV was chosen deliberately for crash resistance: even if power is cut mid-recording, all data up to that point is recoverable.
-
-Output specs:
-
-```
-  Container .. MKV (Matroska)
-  Video ...... H.264, Constrained Baseline, 1920x1080, 30fps, CRF 28
-  Audio ...... AAC LC, 192 kbps, 48 kHz, stereo
-  Bitrate .... ~2.4 Mbps total (~1 GB/hour)
-  Storage .... 500GB NVMe ≈ 500 hours of recording
-  Filename ... rec_YYYYMMDD_HHMMSS[_Author_Title].mkv
-```
-
-### Monitoring a recording
-
-While recording, the dashboard shows:
-
-- **Health histogram** - live FFmpeg stats: fps, bitrate, encoding speed, dropped frames. If speed drops below 1.0x, you have a problem.
-- **Recording preview** - a ~15-second clip extracted from the growing MKV file using the "sandwich" technique, playable directly in the browser.
-- **CPU and temperature charts** - 10-minute sparkline so you can spot thermal throttling.
-- **Disk I/O and remaining time estimate**.
-
-### Stopping
-
-Hit Stop on the dashboard or press the button on the box. FFmpeg receives a clean shutdown signal, finalizes the MKV headers, and the file is ready.
+  - [Changelog](CHANGELOG.md)
+  - [Contributing](CONTRIBUTING.md)
+  - [Code of Conduct](CODE_OF_CONDUCT.md)
+  - [Security Policy](SECURITY.md)
 
 ---
 
-## 7. Live Streaming (Optional)
-
-![Fitebox Live Streaming](doc/img/fitebox_dashboard_streaming.jpeg)
-
-FITEBOX can stream to YouTube, Twitch, or any RTMP server while simultaneously recording locally. This was one of the hardest parts to get right.
-
-### Configuration
-
-On the Dashboard, select a streaming destination (YouTube / Twitch / Custom) and enter your stream key. Hit Start Streaming after the recording is running.
-
-### How it works
-
-The streaming pipeline maintains a **single persistent RTMP connection** and feeds video segments sequentially:
-
-```
-  Phase 1 - WAITING ..... polls until recording starts
-  Phase 2 - BUFFERING ... waits ~15s for MKV to accumulate data
-  Phase 3 - INTRO ....... feeds the intro bumper
-  Phase 4 - LIVE ........ feeds the growing MKV file (video: copy, audio: re-encode)
-  Phase 5 - DRAINING .... recording stopped, drains to natural EOF
-  Phase 6 - OUTRO ....... feeds the outro bumper
-  Phase 7 - CLOSING ..... closes RTMP connection cleanly
-```
-
-The live phase uses **`-c:v copy`** for video - zero CPU cost. Only the audio is re-encoded to fix timestamp irregularities that would otherwise cause audible clicks on the stream (see Troubleshooting).
-
-Timestamp continuity across phases is maintained with `-output_ts_offset` chaining on each feeder process. Without this, YouTube sees timestamp jumps and kills the stream.
-
-### Why a single RTMP connection?
-
-Multiple connections caused YouTube to interpret each segment as a separate stream. The audience would see "stream ended" and have to rejoin. One persistent TCP session through the entire broadcast solved this.
-
----
-
-## 8. Managing Recordings
-
-The **Recordings** page in the web UI lets you:
-
-- Browse all recordings with metadata (duration, size, date, speaker, title)
-- **Play back in the browser** - MKV files are remuxed to MP4 on-the-fly (zero CPU, just container repackaging)
-- Download the original MKV
-- **Apply bumpers** - concatenate intro + recording + outro into a single file with automatic A/V sync validation
-- Batch delete with confirmation
-- View JSON metadata sidecars
-
-![Fitebox Web UI Videos](doc/img/fitebox_screen_videos.jpeg)
-
----
-
-## 9. Troubleshooting
-
-### HDMI cable triggers insufficient power warning
-
-Some bulky micro HDMI adapters or cables with thick molded connectors draw enough current to trigger the Raspberry Pi 5's under-voltage warning, even with the official power supply. The symptom is the lightning bolt icon and `vcgencmd get_throttled` showing under-voltage events. Use **slim, short micro HDMI cables** without bulky adapters. Before blaming your power supply, try swapping the HDMI cable.
-
-### No video from HDMI capture
-
-Check that the capture card is detected:
-
-```bash
-v4l2-ctl --list-devices
-```
-
-Look for "Hagibis" or "MS2109" in the output. If it does not appear, try a different USB port. Some USB 3.0 ports have compatibility issues - use USB 2.0.
-
-### No audio
-
-Some USB audio devices ship with capture channels **muted by default**. FITEBOX unmutes them automatically, but if you still have no audio:
-
-```bash
-# List ALSA cards
-arecord -l
-
-# Check mixer controls (replace 0 with your card number)
-amixer -c 0 contents
-
-# Force unmute everything
-amixer -c 0 set Capture 100% unmute
-amixer -c 0 set Mic 100% unmute
-```
-
-Also: **PulseAudio blocks ALSA**. If PulseAudio is running, FFmpeg cannot access audio devices directly. Kill it:
-
-```bash
-pulseaudio -k && sleep 1
-```
-
-In Docker, either do not install PulseAudio or kill it in the entrypoint.
-
-### Recording has audio clicks (during streaming)
-
-This is the MKV AAC timestamp problem. AAC packets in Matroska have micro-irregularities (on the order of milliseconds) that are inaudible during playback but produce clicks when copied directly to FLV/RTMP.
-
-The fix is to **always re-encode audio for streaming**:
-
-```
--af aresample=async=1000
-```
-
-This aggressively corrects timestamp drift greater than ~21ms. The value `async=1` is too gentle and will not fix it. Using `-c:a copy` preserves the
-broken timestamps. FITEBOX handles this automatically in the streaming pipeline.
-
-### Encoding speed below 1.0x
-
-The Raspberry Pi 5 runs a single 1080p software encode at roughly 1.0x speed. If encoding speed drops below that, frames are being dropped. Check for:
-
-- **Thermal throttling** - is the CPU temperature above 80°C? Add a fan or heatsink.
-- **Disk contention** - is something else writing to the SSD? Preview extraction, downloads, and other disk access should use `nice -n 19 ionice -c 3`.
-- **USB bus contention** - two capture devices plus an SSD on the same USB controller can saturate the bus.
-
-### OLED not showing anything
-
-```bash
-# Check I2C is enabled
-i2cdetect -y 1
-# Should show 0x3c
-```
-
-If no device is found: check wiring (SDA→Pin 3, SCL→Pin 5, VCC→Pin 1, GND→Pin 39) and make sure I2C is enabled in `raspi-config`.
-
-### USB device order changes between boots
-
-This is normal. USB device enumeration is not deterministic - `/dev/video0` might be the webcam on one boot and the HDMI card on the next.
-
-FITEBOX handles this automatically by detecting devices **by name** (looking for keywords like "Hagibis", "MS2109", "camera") rather than by device number. Do not hardcode `/dev/videoN` in any configuration.
-
-### MKV file corrupted after power loss
-
-MKV is designed to be crash-resistant. In most cases, the file is playable up to the point of interruption. If it needs repair:
-
-```bash
-# Install mkvtoolnix
-sudo apt install mkvtoolnix
-
-# Repair
-mkclean --fix your_recording.mkv repaired.mkv
-```
-
-### YouTube stream dies after reconnection
-
-YouTube needs a **1-2 minute cooldown** between stream sessions. If you stop and restart streaming too quickly, YouTube will accept the connection but degrade quality or drop it. Wait at least a minute before restarting.
-
----
-
-## 10. API Reference
-
-The web server exposes a REST API with HMAC-SHA256 authentication. All requests must include a signature computed as `HMAC(timestamp:body, key)` with a 30-second replay window.
-
-Key endpoints:
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/recording/start` | Start recording (optional: author, title) |
-| `POST` | `/api/recording/stop` | Stop recording |
-| `POST` | `/api/streaming/start` | Start streaming (destination, key) |
-| `POST` | `/api/streaming/stop` | Stop streaming |
-| `GET` | `/api/recordings` | List recordings with metadata |
-| `GET` | `/api/recordings/<file>/play` | Stream MKV→MP4 for browser playback |
-| `GET` | `/api/recordings/<file>/download` | Download original MKV |
-| `POST` | `/api/recordings/<file>/bumper` | Apply bumpers to recording |
-| `DELETE` | `/api/recordings/<file>` | Delete recording |
-| `GET` | `/api/hardware/preview/<device>` | MJPEG preview stream |
-| `GET` | `/api/hardware/audio/<device>` | MP3 audio stream |
-| `POST` | `/api/network/scan` | Scan WiFi networks |
-| `POST` | `/api/network/connect` | Connect to WiFi |
-| `POST` | `/api/network/hotspot` | Create WiFi hotspot |
-| `POST` | `/api/schedule/download` | Download conference schedule XML |
-| `POST` | `/api/system/reboot` | Reboot the Raspberry Pi |
-| `POST` | `/api/system/shutdown` | Shut down the Raspberry Pi |
-| `WS` | `/ws` | WebSocket - real-time status, metrics history |
-
-The JavaScript client library (`fitebox.js`) handles HMAC signing, WebSocket reconnection, and toast notifications automatically.
-
----
-
-## 11. Credits & Acknowledgments
+## Credits & Acknowledgments
 
 **David Santos** - designed the hardware architecture for the first FITEBOX prototype, selected the OLED display and button components, selected the HDMI capture card (the same one used at FOSDEM conferences), built the preliminary OLED controller software, and designed and 3D-printed the first physical enclosure (STL files included in the repository). The hardware foundation of this project exists because of David's work.
 
@@ -578,9 +408,11 @@ This project was developed with assistance from AI coding tools (Claude by Anthr
 
 **Build guide & full story:** [juanmitaboada.com/fitebox](https://www.juanmitaboada.com/fitebox/)
 
+**Docker images:** [GitHub Container Registry](https://ghcr.io/juanmitaboada/fitebox) · [Docker Hub](https://hub.docker.com/r/juanmitaboada/fitebox)
+
 ---
 
-## 12. License
+## License
 
 ```
 Copyright 2025-2026 Juanmi Taboada, David Santos

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 FITEBOX GPIO Button Test
-Test each GPIO button independently, showing press/release status in the terminal
+Test each GPIO button independently, showing press/release status in
+the terminal
 """
 
 import sys
 import time
+
 from lib.fitebox_hardware import FiteboxHardware
 
 # GPIO pin mapping: (GPIO number, Button name)

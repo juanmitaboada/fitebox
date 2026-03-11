@@ -1,32 +1,35 @@
 #!/usr/bin/env python3
 """
 FITEBOX Action Manager v2.0
-Central coordinator for handling commands from OLED and Web interface, executing real actions.
+Central coordinator for handling commands from OLED and Web interface,
+executing real actions.
 Supports: recording, network (adhoc/infra/wired), system.
 """
 
-import os
-import sys
-import time
 import json
-import socket
-import threading
-import subprocess
+import os
 import secrets
+import socket
 import string
+import subprocess
+import sys
+import threading
+import time
 import urllib.request
 from datetime import datetime
-import psutil
-from datetime import datetime
+from typing import Any
 
-from lib.helpers import plymouth_screen, PlymouthScreen
-from lib.schedule_parser import (  # type:ignore # pylint: disable=import-error, no-name-in-module # noqa: E501
-    get_rooms,
-    find_adjacent_sessions,
-    parse_schedule,
-)
+import psutil
+from typing_extensions import TypedDict
 
 from lib import settings
+from lib.helpers import OutScreen, announce_screen, out_screen
+from lib.schedule_parser import (  # type:ignore # pylint: disable=import-error, no-name-in-module # noqa: E501
+    find_adjacent_sessions,
+    get_rooms,
+    parse_schedule,
+)
+from lib.types import KnownNetwork, Recording, Session
 
 # === CONFIGURATION ===
 STATUS_UPDATE_INTERVAL_IDLE = 3  # Seconds - idle
@@ -35,7 +38,8 @@ STATUS_UPDATE_INTERVAL_RECORDING = (
 )
 STATIC_DATA_REFRESH_INTERVAL = 60  # Seconds - MACs, gateways, etc.
 
-# Control files used by recording engine to communicate state and receive title/author
+# Control files used by recording engine to communicate state and
+# receive title/author
 RECORDING_STATE_FILE = "/tmp/fitebox_recording_state.json"
 NETWORK_SCRIPTS = "/app/network"
 SCHEDULE_DATA_DIR = "/fitebox/data"
@@ -49,24 +53,34 @@ DEFAULT_SCHEDULE_URL = (
 WAIT_RECORDING_START = 10
 
 
-class FiteboxManager:
+class State(TypedDict):
+    recording: bool
+    recording_start_time: float
+    recording_title: str
+    recording_author: str
+    recording_time: int
+
+
+class FiteboxManager:  # pylint: disable=too-many-instance-attributes
+
     def __init__(self):
         self.socket = None
         self.connected = False
         self.running = True
 
         # System state
-        self.state = {
+        self.state: State = {
             "recording": False,
             "recording_start_time": 0,
             "recording_title": "Untitled Session",
             "recording_author": "",
+            "recording_time": 0,
         }
         self._recording_starting = (
             False  # Guard against double-start race condition
         )
         self._prev_net_stats = {}
-        self._prev_net_time = 0
+        self._prev_net_time: float = 0.0
 
         # Threads
         self.listener_thread = None
@@ -79,13 +93,23 @@ class FiteboxManager:
         # Schedule
         self.schedule_config = self._load_schedule_config()
 
-    # === WEB KEY MANAGEMENT ===
+        # Network info cache (avoid expensive nmcli calls every 2s)
+        self._wifi_password_cache = ""
+        self._wifi_password_ts: float = 0.0
+        self._known_networks_cache: list[KnownNetwork] = []
+        self._known_networks_ts: float = 0.0
 
+        # Monitor initial static data refresh
+        self._static_data = {}
+        self._static_data_ts: float = 0.0
+        self._refresh_static_data()
+
+    # === WEB KEY MANAGEMENT ===
     def _init_web_key(self):
         """Generate or load web access key. Shown on OLED for auth."""
         try:
             if os.path.exists(settings.WEB_KEY_FILE):
-                with open(settings.WEB_KEY_FILE, "r", encoding="utf8") as f:
+                with open(settings.WEB_KEY_FILE, encoding="utf8") as f:
                     key = f.read().strip()
                     if key:
                         self.web_key = key
@@ -103,15 +127,9 @@ class FiteboxManager:
             print(f"⚠️  Could not write key file: {e}")
         print(f"🔑 Web key generated: {self.web_key}")
 
-        # Network info cache (avoid expensive nmcli calls every 2s)
-        self._wifi_password_cache = ""
-        self._wifi_password_ts = 0
-        self._known_networks_cache = []
-        self._known_networks_ts = 0
-
     # === SOCKET CONNECTION ===
 
-    def connect(self):
+    def connect(self) -> bool:
         """Connect to OLED controller socket with retries."""
         max_retries = 10
         retry_delay = 2
@@ -122,23 +140,24 @@ class FiteboxManager:
                 self.socket.connect(settings.SOCKET_PATH)
                 self.connected = True
                 print(
-                    f"✅ Connected to OLED controller at {settings.SOCKET_PATH}"
+                    "✅ Connected to OLED controller "
+                    f"at {settings.SOCKET_PATH}",
                 )
                 return True
             except Exception as e:
                 print(
                     f"⚠️  Connection attempt {attempt + 1}/{max_retries} "
-                    f"failed to {settings.SOCKET_PATH}: {e}"
+                    f"failed to {settings.SOCKET_PATH}: {e}",
                 )
                 time.sleep(retry_delay)
 
         print(
             f"❌ Could not connect to OLED controller after {max_retries} "
-            f"attempts"
+            f"attempts",
         )
         return False
 
-    def send_status_update(self, **kwargs):
+    def send_status_update(self, **kwargs) -> None:
         """Send status update to OLED"""
         if not self.connected:
             return
@@ -157,7 +176,7 @@ class FiteboxManager:
 
     # === COMMAND LISTENER ===
 
-    def listen_commands(self):
+    def listen_commands(self) -> None:
         """Listen for commands from OLED controller (blocking)"""
         buffer = ""
 
@@ -184,7 +203,7 @@ class FiteboxManager:
                 self.connected = False
                 break
 
-    def process_message(self, message):
+    def process_message(self, message: str) -> None:
         """Process a JSON message from OLED or Web (via OLED relay)"""
         try:
             msg = json.loads(message)
@@ -217,14 +236,18 @@ class FiteboxManager:
 
     # === COMMAND DISPATCH ===
 
-    def execute_command(self, command, params=None):
+    def execute_command(  # pylint: disable=too-many-statements
+        self,
+        command: str,
+        params=None,
+    ) -> None:
         """Execute command requested by OLED or Web"""
         if params is None:
             params = {}
 
         print(
             f"🚀 Executing command: {command}"
-            + (f" params={params}" if params else "")
+            + (f" params={params}" if params else ""),
         )
 
         try:
@@ -241,7 +264,8 @@ class FiteboxManager:
 
             elif command == "set_title_author":
                 self.set_recording_title(
-                    params.get("title", ""), params.get("author", "")
+                    params.get("title", ""),
+                    params.get("author", ""),
                 )
 
             # --- Network ---
@@ -304,12 +328,54 @@ class FiteboxManager:
             elif command == "schedule.select":
                 self.select_session(params)
 
+            # --- Streaming ---
+            elif command == "streaming.state":
+                self.send_status_update(
+                    streaming_active=params.get("streaming_active", False),
+                    streaming_phase=params.get("streaming_phase", ""),
+                    streaming_draining=params.get("streaming_draining", False),
+                )
+
+            # --- Announce ---
+            elif command == "announce.show":
+                text = params.get("text", "")
+                duration = params.get("duration", 10)
+                print(f"📢 Announce: {text} ({duration}s)")
+                announce_screen(text, duration)
+
+            # --- Security ---
+            elif command == "security.refresh":
+                self._refresh_static_data()
+
+            # --- Update ---
+            elif command == "update.progress":
+                pct = params.get("percent", 0)
+                phase = params.get("phase", "")
+                msg = params.get("message", "")
+                self.send_status_update(
+                    update_running=True,
+                    update_percent=pct,
+                    update_phase=phase,
+                    update_message=msg,
+                )
+                if pct >= 95:
+                    out_screen(OutScreen.shutdown, "Restarting...")
+
             # --- System ---
             elif command == "system.reboot":
                 self.system_reboot()
 
             elif command == "system.shutdown":
                 self.system_shutdown()
+
+            # --- Diagnostics ---
+            elif command == "diagnostic.notify":
+                dtype = params.get("type", "system")
+                print(f"🔍 Diagnostic: {dtype}")
+                self.send_status_update(
+                    diagnostic_running=True,
+                    diagnostic_type=dtype,
+                )
 
             else:
                 print(f"⚠️  Unknown command: {command}")
@@ -319,33 +385,44 @@ class FiteboxManager:
 
     # === RECORDING ===
 
-    def start_recording(self):
-        """Start recording by launching ffmpeg engine with title/author parameters. Guard against double-start."""
+    def start_recording(  # pylint: disable=too-many-statements # noqa: E501
+        self,
+    ) -> None:
+        """
+        Start recording by launching ffmpeg engine with title/author
+        parameters. Guard against double-start.
+        """
         if self.is_recording() or self._recording_starting:
             print("⚠️  Already recording (or start in progress)")
             return
 
         self._recording_starting = True
         print("🔴 Starting recording...")
-        plymouth_screen(PlymouthScreen.recording_start)
+        out_screen(OutScreen.recording_start)
 
         try:
-            with open(settings.TITLE_FILE, "w") as f:
+            with open(settings.TITLE_FILE, "w", encoding="utf-8") as f:
                 f.write(self.state["recording_title"])
 
             cmd = [settings.RECORDING_ENGINE]
-            author = self.state.get("recording_author", "")
-            title = self.state.get("recording_title", "")
+            author = self.state.get("recording_author") or ""
+            title = self.state.get("recording_title") or ""
             if author:
                 cmd.extend(["--author", author])
             if title:
                 cmd.extend(["--title", title])
 
-            process = subprocess.Popen(
-                cmd, stdout=sys.stdout, stderr=sys.stderr, text=True
+            # Linter complains about not using the with() context manager, but
+            # we need the process to keep running after this function exits, so
+            # we won't wait for it here
+            process = subprocess.Popen(  # pylint: disable=consider-using-with
+                cmd,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+                text=True,
             )
 
-            with open(settings.PID_FILE, "w") as f:
+            with open(settings.PID_FILE, "w", encoding="utf-8") as f:
                 f.write(str(process.pid))
 
             self.state["recording"] = True
@@ -370,53 +447,70 @@ class FiteboxManager:
                 phase = self.get_recording_phase()
                 if phase and phase.get("phase") == "failed":
                     print("❌ FFmpeg failed to start")
-                    plymouth_screen(
-                        PlymouthScreen.failure, "FFmpeg failed to start"
+                    out_screen(
+                        OutScreen.failure,
+                        "FFmpeg failed to start",
                     )
                     self.state["recording"] = False
                     self._recording_starting = False
                     self.send_status_update(
-                        recording=False, recording_phase="failed"
+                        recording=False,
+                        recording_phase="failed",
                     )
                     break
-                else:
-                    # No failure, keep waiting
-                    waited += 1
-                    time.sleep(1)
+
+                # No failure, keep waiting
+                waited += 1
+                time.sleep(1)
 
             if self.is_recording():
-                plymouth_screen(PlymouthScreen.recording)
+                # Update start time to actual recording start
+                phase_data = self.get_recording_phase()
+                if phase_data and phase_data.get("started_at"):
+                    try:
+                        dt = datetime.fromisoformat(phase_data["started_at"])
+                        self.state["recording_start_time"] = dt.timestamp() + 1
+                    except Exception:
+                        pass  # Keep the launch time as fallback
+                out_screen(OutScreen.recording)
                 self._recording_starting = False
             else:
                 print(
-                    f"❌ FFmpeg failed to start after {WAIT_RECORDING_START} seconds waiting"
+                    "❌ FFmpeg failed to start after "
+                    f"{WAIT_RECORDING_START} seconds waiting",
                 )
-                plymouth_screen(
-                    PlymouthScreen.failure,
-                    "FFmpeg failed to start after {WAIT_RECORDING_START} seconds waiting",
+                out_screen(
+                    OutScreen.failure,
+                    f"FFmpeg failed to start after {WAIT_RECORDING_START} "
+                    "seconds waiting",
                 )
                 self.state["recording"] = False
                 self._recording_starting = False
                 self.send_status_update(
-                    recording=False, recording_phase="failed"
+                    recording=False,
+                    recording_phase="failed",
                 )
 
         except Exception as e:
             print(f"❌ Failed to start recording: {e}")
             self._recording_starting = False
             self.send_status_update(recording=False)
-            plymouth_screen(
-                PlymouthScreen.failure, "Failed to start recording"
+            out_screen(
+                OutScreen.failure,
+                "Failed to start recording",
             )
 
-    def stop_recording(self):
-        """Stop recording by sending SIGTERM to ffmpeg process. Cleanup state files and update status."""
+    def stop_recording(self) -> None:
+        """
+        Stop recording by sending SIGTERM to ffmpeg process. Cleanup state
+        files and update status
+        """
         if not self.is_recording() and not self.state.get("recording"):
             print("⚠️  Not recording")
             return
 
         print("⏹️  Stopping recording...")
-        plymouth_screen(PlymouthScreen.recording_stop)
+        out_screen(OutScreen.recording_stop)
 
         try:
             # Kill recording ffmpeg
@@ -428,12 +522,13 @@ class FiteboxManager:
                     "ffmpeg.*-shortest.*/recordings/rec_",
                 ],
                 capture_output=True,
+                check=False,
             )
             time.sleep(2)
 
             if self.is_recording():
                 print("⚠️  ffmpeg still alive, SIGKILL")
-                subprocess.run(["pkill", "-SIGKILL", "ffmpeg"])
+                subprocess.run(["pkill", "-SIGKILL", "ffmpeg"], check=False)
                 time.sleep(1)
 
             for f in [settings.PID_FILE, settings.STATE_FILE]:
@@ -445,37 +540,47 @@ class FiteboxManager:
             self._recording_starting = False
 
             print("✅ Recording stopped")
-            plymouth_screen(PlymouthScreen.ready)
+            out_screen(OutScreen.ready)
             self.send_status_update(
-                recording=False, recording_time=0, recording_phase=""
+                recording=False,
+                recording_time=0,
+                recording_phase="",
             )
 
         except Exception as e:
-            plymouth_screen(PlymouthScreen.failure, "Failed to stop recording")
+            out_screen(OutScreen.failure, "Failed to stop recording")
             print(f"❌ Failed to stop recording: {e}")
 
-    def is_recording(self):
-        """Check if ffmpeg recording process is running by looking for its PID or process name."""
+    def is_recording(self) -> bool:
+        """
+        Check if ffmpeg recording process is running by looking for its PID
+        or process name
+        """
         try:
             result = subprocess.run(
                 ["pgrep", "-f", "ffmpeg.*-shortest.*/recordings/rec_"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             return result.returncode == 0
         except Exception:
             return False
 
-    def get_recording_phase(self):
+    def get_recording_phase(self) -> dict[str, Any] | None:
         """Read current recording phase from engine state file."""
         try:
-            with open(settings.STATE_FILE, "r") as f:
+            with open(settings.STATE_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return None
 
-    def _recover_recording_state(self):
-        """Recover recording state if there's an active recording process. This handles the case where the manager restarts while ffmpeg is still running."""
+    def _recover_recording_state(self) -> None:
+        """
+        Recover recording state if there's an active recording process. This
+        handles the case where the manager restarts while ffmpeg is still
+        running
+        """
         if not self.is_recording():
             if os.path.exists(settings.STATE_FILE):
                 os.remove(settings.STATE_FILE)
@@ -505,14 +610,16 @@ class FiteboxManager:
         self.send_status_update(
             recording=True,
             recording_time=int(
-                time.time() - self.state["recording_start_time"]
+                time.time() - self.state["recording_start_time"],
             ),
             recording_title=self.state.get("recording_title", ""),
             recording_author=self.state.get("recording_author", ""),
         )
 
-    def set_recording_title(self, title, author=""):
-        """Set recording title and author, update state file and notify OLED."""
+    def set_recording_title(self, title: str, author: str | None = "") -> None:
+        """
+        Set recording title and author, update state file and notify OLED
+        """
         self.state["recording_title"] = title
         if author is not None:
             self.state["recording_author"] = author
@@ -525,17 +632,21 @@ class FiteboxManager:
             recording_author=self.state.get("recording_author", ""),
         )
         print(
-            f"📝 Title: {title}" + (f" | Author: {author}" if author else "")
+            f"📝 Title: {title}" + (f" | Author: {author}" if author else ""),
         )
 
     # === NETWORK: AD-HOC ===
 
-    def set_network_adhoc(self):
-        """Enable ad-hoc WiFi mode with random SSID and password. This creates a local hotspot for direct connection."""
+    def set_network_adhoc(self) -> None:
+        """
+        Enable ad-hoc WiFi mode with random SSID and password. This creates
+        a local hotspot for direct connection
+        """
         print("📡 Activating ad-hoc mode...")
 
         try:
-            # Create a random 4-hex-digit suffix for the SSID to avoid conflicts (e.g. "fitebox_a1b2")
+            # Create a random 4-hex-digit suffix for the SSID
+            # to avoid conflicts (e.g. "fitebox_a1b2")
             suffix = secrets.token_hex(2).lower()  # e.g. "a1b2"
             ssid = f"fitebox_{suffix}"
             password = "".join(
@@ -543,7 +654,9 @@ class FiteboxManager:
                 for _ in range(8)
             )
 
-            # Execute adhoc script with SSID and password parameters. The script should handle creating the ad-hoc network using nmcli or hostapd.
+            # Execute adhoc script with SSID and password parameters. The
+            # script should handle creating the ad-hoc network using nmcli
+            # or hostapd
             subprocess.run(
                 [
                     os.path.join(NETWORK_SCRIPTS, "network-adhoc.sh"),
@@ -559,7 +672,9 @@ class FiteboxManager:
                 network_mode="Ad-Hoc",
                 adhoc_ssid=ssid,
                 adhoc_password=password,
-                ip="192.168.4.1",  # Typical IP for ad-hoc mode, can be adjusted by the script if needed. OLED can show this to user for direct connection.
+                # Typical IP for ad-hoc mode, can be adjusted by the script if
+                # needed. OLED can show this to user for direct connection.
+                ip="192.168.4.1",
             )
 
             print(f"✅ Ad-Hoc active: SSID={ssid} PASS={password}")
@@ -569,7 +684,7 @@ class FiteboxManager:
 
     # === NETWORK: WIFI CLIENT ===
 
-    def set_network_mode(self, mode):
+    def set_network_mode(self, mode: str) -> None:
         """Change network mode (legacy client mode)"""
         print(f"🌐 Setting network mode: {mode}")
 
@@ -587,8 +702,12 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ Failed to change network mode: {e}")
 
-    def scan_wifi(self):
-        """Scan for WiFi networks using nmcli and send results to OLED. The scan script should return a JSON array of networks with SSID, signal strength, security, etc."""
+    def scan_wifi(self) -> None:
+        """
+        Scan for WiFi networks using nmcli and send results to OLED. The scan
+        script should return a JSON array of networks with SSID, signal
+        strength, security, etc.
+        """
         print("📶 Scanning WiFi networks...")
 
         try:
@@ -612,8 +731,12 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ WiFi scan failed: {e}")
 
-    def connect_wifi(self, params):
-        """Connect to a WiFi network using nmcli with given parameters. The connect script should handle creating or activating the connection profile."""
+    def connect_wifi(self, params: dict[str, Any]) -> None:
+        """
+        Connect to a WiFi network using nmcli with given parameters. The
+        connect script should handle creating or activating the connection
+        profile
+        """
         ssid = params.get("ssid", "")
         password = params.get("password", "")
         dhcp = params.get("dhcp", True)
@@ -635,7 +758,7 @@ class FiteboxManager:
                         params.get("netmask", "255.255.255.0"),
                         params.get("gateway", ""),
                         params.get("dns", "8.8.8.8"),
-                    ]
+                    ],
                 )
 
             subprocess.run(cmd, check=True, timeout=30)
@@ -646,12 +769,14 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ WiFi connection failed: {e}")
 
-    def list_known_networks(self):
-        """List saved WiFi connection profiles from NetworkManager (cached 30s)."""
+    def list_known_networks(self) -> list[KnownNetwork]:
+        """
+        List saved WiFi connection profiles from NetworkManager (cached 30s)
+        """
         now = time.time()
         if self._known_networks_cache and (now - self._known_networks_ts) < 30:
             return self._known_networks_cache
-        known = []
+        known: list[KnownNetwork] = []
         try:
             result = subprocess.run(
                 [
@@ -665,6 +790,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for line in result.stdout.strip().split("\n"):
                 parts = line.split(":")
@@ -673,7 +799,10 @@ class FiteboxManager:
                     if name == "fitebox-hotspot":
                         continue
                     known.append(
-                        {"name": name, "autoconnect": parts[2] == "yes"}
+                        KnownNetwork(
+                            name=name,
+                            autoconnect=parts[2] == "yes",
+                        ),
                     )
             self._known_networks_cache = known
             self._known_networks_ts = now
@@ -681,38 +810,39 @@ class FiteboxManager:
             print(f"❌ list_known_networks error: {e}")
         return known or self._known_networks_cache
 
-    def send_known_networks(self):
+    def send_known_networks(self) -> None:
         """Send known WiFi networks list to OLED."""
         networks = self.list_known_networks()
         self.send_status_update(known_networks=networks)
         print(f"📶 Known networks: {[n['name'] for n in networks]}")
 
-    def connect_known_network(self, conn_name):
+    def connect_known_network(self, conn_name: str) -> None:
         """Connect to a known/saved WiFi network by NM connection name."""
-        if not conn_name:
+        if conn_name:
+            print(f"📶 Connecting to known network: {conn_name}")
+            try:
+                # Disconnect current hotspot if active
+                subprocess.run(
+                    ["nmcli", "connection", "down", "fitebox-hotspot"],
+                    timeout=10,
+                    capture_output=True,
+                    check=False,
+                )
+                # Activate saved connection
+                subprocess.run(
+                    ["nmcli", "connection", "up", conn_name],
+                    check=True,
+                    timeout=30,
+                )
+                self._known_networks_ts = 0  # Invalidate cache
+                self.send_status_update(network_mode="Client")
+                print(f"✅ Connected to {conn_name}")
+            except Exception as e:
+                print(f"❌ Connect to known network failed: {e}")
+        else:
             print("⚠️  No connection name specified")
-            return
-        print(f"📶 Connecting to known network: {conn_name}")
-        try:
-            # Disconnect current hotspot if active
-            subprocess.run(
-                ["nmcli", "connection", "down", "fitebox-hotspot"],
-                timeout=10,
-                capture_output=True,
-            )
-            # Activate saved connection
-            subprocess.run(
-                ["nmcli", "connection", "up", conn_name],
-                check=True,
-                timeout=30,
-            )
-            self._known_networks_ts = 0  # Invalidate cache
-            self.send_status_update(network_mode="Client")
-            print(f"✅ Connected to {conn_name}")
-        except Exception as e:
-            print(f"❌ Connect to known network failed: {e}")
 
-    def forget_network(self, conn_name):
+    def forget_network(self, conn_name: str) -> None:
         """Delete a saved WiFi connection profile."""
         if not conn_name:
             return
@@ -733,8 +863,11 @@ class FiteboxManager:
 
     # === NETWORK: WIRED ===
 
-    def configure_wired(self, params):
-        """Set static IP or DHCP for wired Ethernet using nmcli. The wired script should handle the configuration based on parameters."""
+    def configure_wired(self, params: dict[str, Any]) -> None:
+        """
+        Set static IP or DHCP for wired Ethernet using nmcli. The wired script
+        should handle the configuration based on parameters
+        """
         dhcp = params.get("dhcp", True)
 
         print(f"🔌 Configuring wired network (DHCP={dhcp})")
@@ -749,7 +882,8 @@ class FiteboxManager:
                 dns = params.get("dns", "8.8.8.8")
 
                 subprocess.run(
-                    ["ip", "addr", "flush", "dev", "eth0"], check=True
+                    ["ip", "addr", "flush", "dev", "eth0"],
+                    check=True,
                 )
                 subprocess.run(
                     ["ip", "addr", "add", f"{ip}/{netmask}", "dev", "eth0"],
@@ -770,7 +904,7 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ Wired config failed: {e}")
 
-    def set_device_enabled(self, device_type, enabled):
+    def set_device_enabled(self, device_type: str, enabled: bool) -> None:
         """Enable or disable a network device (wifi or ethernet)."""
         print(f"🔌 {'Enabling' if enabled else 'Disabling'} {device_type}")
         try:
@@ -792,6 +926,7 @@ class FiteboxManager:
                     subprocess.run(
                         ["ip", "link", "set", eth_dev, "up"],
                         timeout=5,
+                        check=False,
                     )
                     time.sleep(1)  # Wait for carrier detection
                     if conn:
@@ -805,16 +940,19 @@ class FiteboxManager:
                                 "yes",
                             ],
                             timeout=5,
+                            check=False,
                         )
                         # Try to activate the connection
                         subprocess.run(
                             ["nmcli", "connection", "up", conn],
                             timeout=15,
+                            check=False,
                         )
                     else:
                         subprocess.run(
                             ["nmcli", "device", "connect", eth_dev],
                             timeout=15,
+                            check=False,
                         )
                 else:
                     # Set autoconnect=no FIRST to prevent NM from reconnecting
@@ -829,19 +967,22 @@ class FiteboxManager:
                                 "no",
                             ],
                             timeout=5,
+                            check=False,
                         )
                     subprocess.run(
                         ["nmcli", "device", "disconnect", eth_dev],
                         timeout=10,
+                        check=False,
                     )
                 self.send_status_update(eth_enabled=enabled)
             print(f"✅ {device_type} {'enabled' if enabled else 'disabled'}")
         except Exception as e:
             print(
-                f"❌ Failed to {'enable' if enabled else 'disable'} {device_type}: {e}"
+                f"❌ Failed to {'enable' if enabled else 'disable'} "
+                f"{device_type}: {e}",
             )
 
-    def _find_eth_device(self):
+    def _find_eth_device(self) -> str:
         """Find the primary ethernet device name."""
         try:
             result = subprocess.run(
@@ -849,6 +990,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for line in result.stdout.strip().split("\n"):
                 parts = line.split(":")
@@ -858,7 +1000,7 @@ class FiteboxManager:
             pass
         return "eth0"
 
-    def _find_eth_connection(self, eth_dev):
+    def _find_eth_connection(self, eth_dev: str) -> str:
         """Find the NM connection name for an ethernet device."""
         try:
             result = subprocess.run(
@@ -873,6 +1015,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for line in result.stdout.strip().split("\n"):
                 parts = line.split(":")
@@ -883,7 +1026,7 @@ class FiteboxManager:
             pass
         return ""
 
-    def _is_wifi_enabled(self):
+    def _is_wifi_enabled(self) -> bool:
         """Check if WiFi radio is enabled."""
         try:
             result = subprocess.run(
@@ -891,12 +1034,13 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             return result.stdout.strip().lower() == "enabled"
         except Exception:
             return True
 
-    def _is_eth_enabled(self):
+    def _is_eth_enabled(self) -> bool:
         """Check if Ethernet is user-enabled (based on autoconnect flag)."""
         try:
             eth_dev = self._find_eth_device()
@@ -915,6 +1059,7 @@ class FiteboxManager:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 for line in result.stdout.strip().split("\n"):
                     if "autoconnect" in line:
@@ -925,6 +1070,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for line in result.stdout.strip().split("\n"):
                 parts = line.split(":")
@@ -934,18 +1080,19 @@ class FiteboxManager:
             pass
         return True
 
-    def _get_wifi_signal(self):
+    def _get_wifi_signal(self) -> int:
         """Get WiFi signal strength in dBm using nmcli (iw not available)."""
         try:
             # Method 1: /proc/net/wireless (always available)
-            with open("/proc/net/wireless") as f:
+            with open("/proc/net/wireless", encoding="utf-8") as f:
                 for line in f:
                     if "wlan0" in line:
                         # Format: wlan0: 0000  link  level  noise ...
                         parts = line.split()
                         if len(parts) >= 4:
                             level = float(parts[3].rstrip("."))
-                            # If positive, it's relative (0-100), convert to dBm
+                            # If positive, it's relative (0-100), convert
+                            # to dBm
                             if level > 0:
                                 return int(level - 110)
                             return int(level)
@@ -958,6 +1105,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for line in result.stdout.strip().split("\n"):
                 if line.startswith("*:"):
@@ -968,7 +1116,7 @@ class FiteboxManager:
             pass
         return 0
 
-    def _get_wifi_password(self):
+    def _get_wifi_password(self) -> str:
         """Get current WiFi connection password from NM (cached 30s)."""
         now = time.time()
         if self._wifi_password_cache and (now - self._wifi_password_ts) < 30:
@@ -991,6 +1139,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for line in result.stdout.strip().split("\n"):
                 if line.startswith("802-11-wireless-security.psk:"):
@@ -1003,7 +1152,7 @@ class FiteboxManager:
             pass
         return self._wifi_password_cache
 
-    def _get_gateway(self, iface):
+    def _get_gateway(self, iface: str) -> str:
         """Get default gateway for an interface."""
         try:
             result = subprocess.run(
@@ -1011,6 +1160,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=3,
+                check=False,
             )
             for line in result.stdout.strip().split("\n"):
                 if line.startswith("default"):
@@ -1022,15 +1172,18 @@ class FiteboxManager:
             pass
         return ""
 
-    def _get_mac(self, iface):
+    def _get_mac(self, iface: str) -> str:
         """Get MAC address for an interface."""
         try:
-            with open(f"/sys/class/net/{iface}/address") as f:
+            with open(
+                f"/sys/class/net/{iface}/address",
+                encoding="utf-8",
+            ) as f:
                 return f.read().strip()
         except Exception:
             return ""
 
-    def _get_dhcp_mode(self, iface):
+    def _get_dhcp_mode(self, iface: str) -> bool:
         """Check if interface uses DHCP (True) or static (False)."""
         try:
             result = subprocess.run(
@@ -1038,6 +1191,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             dev_name = None
             for line in result.stdout.strip().split("\n"):
@@ -1063,6 +1217,7 @@ class FiteboxManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for line in di.stdout.strip().split("\n"):
                 if line.startswith("GENERAL.CONNECTION:"):
@@ -1073,6 +1228,7 @@ class FiteboxManager:
                             capture_output=True,
                             text=True,
                             timeout=5,
+                            check=False,
                         )
                         for cl in ci.stdout.strip().split("\n"):
                             if cl.startswith("ipv4.method:"):
@@ -1083,11 +1239,11 @@ class FiteboxManager:
 
     # === SCHEDULE ===
 
-    def _load_schedule_config(self):
+    def _load_schedule_config(self) -> dict[str, Any]:
         """Load schedule config from disk."""
         os.makedirs(SCHEDULE_DATA_DIR, exist_ok=True)
         try:
-            with open(SCHEDULE_CONFIG_FILE, "r", encoding="utf8") as f:
+            with open(SCHEDULE_CONFIG_FILE, encoding="utf8") as f:
                 config = json.load(f)
                 troom = config.get("room", "none")
                 print(f"📅 Schedule config loaded: room={troom}")
@@ -1100,7 +1256,7 @@ class FiteboxManager:
                 "last_updated": "",
             }
 
-    def _save_schedule_config(self):
+    def _save_schedule_config(self) -> None:
         """Persist schedule config to disk."""
         os.makedirs(SCHEDULE_DATA_DIR, exist_ok=True)
         try:
@@ -1109,7 +1265,7 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ Failed to save schedule config: {e}")
 
-    def _save_current_session(self, session):
+    def _save_current_session(self, session: Session | None) -> None:
         """Write current session JSON for overlay/metadata."""
         os.makedirs(SCHEDULE_DATA_DIR, exist_ok=True)
         if session:
@@ -1120,7 +1276,7 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ Failed to save session: {e}")
 
-    def download_schedule(self, params=None):
+    def download_schedule(self, params: dict[str, Any] | None = None) -> None:
         """Download schedule XML from URL."""
         if params is None:
             params = {}
@@ -1153,7 +1309,7 @@ class FiteboxManager:
             ):
                 print(
                     f"⚠️  Room '{self.schedule_config['room']}' "
-                    "no longer in schedule"
+                    "no longer in schedule",
                 )
                 self.schedule_config["room"] = ""
                 self._save_schedule_config()
@@ -1169,7 +1325,7 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ Schedule download failed: {e}")
 
-    def set_schedule_room(self, params=None):
+    def set_schedule_room(self, params: dict[str, Any] | None = None) -> None:
         """Set the active room for schedule lookups."""
         if params is None:
             params = {}
@@ -1181,7 +1337,7 @@ class FiteboxManager:
 
         self.send_status_update(schedule_room=room)
 
-    def refresh_current_session(self):
+    def refresh_current_session(self) -> None:
         """Find and set current session from schedule XML + room + time."""
         room = self.schedule_config.get("room", "")
         if not room:
@@ -1196,7 +1352,10 @@ class FiteboxManager:
 
         try:
             prev_s, cur_s, next_s = find_adjacent_sessions(
-                SCHEDULE_XML_FILE, room, datetime.now(), offset_minutes=15
+                SCHEDULE_XML_FILE,
+                room,
+                datetime.now(),
+                offset_minutes=15,
             )
 
             # Use current session, or next if between sessions
@@ -1216,7 +1375,7 @@ class FiteboxManager:
                 )
                 print(
                     f"✅ Session: {session['start']} {session['author']} - "
-                    f"{session['title']}"
+                    f"{session['title']}",
                 )
             else:
                 print("⚠️  No session found for current time")
@@ -1229,7 +1388,7 @@ class FiteboxManager:
         except Exception as e:
             print(f"❌ Session lookup failed: {e}")
 
-    def select_session(self, params=None):
+    def select_session(self, params: dict[str, Any] | None = None) -> None:
         """Manually select a specific session (from OLED or web)."""
         if params is None:
             params = {}
@@ -1267,7 +1426,7 @@ class FiteboxManager:
 
     # === SYSTEM ===
 
-    def system_reboot(self):
+    def system_reboot(self) -> None:
         """Reboot system via D-Bus (works inside Docker)"""
         print("🔄 Rebooting system...")
         self.send_status_update(system_action="reboot")
@@ -1291,7 +1450,7 @@ class FiteboxManager:
             print(f"⚠️  D-Bus reboot failed, trying fallback: {e}")
             subprocess.run(["reboot"], timeout=5, check=True)
 
-    def system_shutdown(self):
+    def system_shutdown(self) -> None:
         """Shutdown system via D-Bus (works inside Docker)"""
         print("🔌 Shutting down system...")
         self.send_status_update(system_action="shutdown")
@@ -1317,12 +1476,13 @@ class FiteboxManager:
 
     # === SYSTEM MONITOR ===
 
-    def _refresh_static_data(self):
+    def _refresh_static_data(self) -> None:
         """Refresh slow-changing data: MACs, gateways, DHCP modes, etc.
         Called once at startup and every STATIC_DATA_REFRESH_INTERVAL."""
         self._static_data = {
             "wifi_enabled": self._is_wifi_enabled(),
             "eth_enabled": self._is_eth_enabled(),
+            "wifi_ssid": self.get_current_ssid(),
             "wifi_password": self._get_wifi_password(),
             "wifi_gateway": self._get_gateway("wlan0"),
             "wifi_dhcp": self._get_dhcp_mode("wifi"),
@@ -1332,9 +1492,19 @@ class FiteboxManager:
             "eth_mac": self._get_mac("eth0"),
             "known_networks": self.list_known_networks(),
         }
+
+        # Security settings (propagated to OLED via status_update)
+        try:
+            with open("/fitebox/data/security.json", encoding="utf-8") as f:
+                sec = json.load(f)
+            for k, v in sec.items():
+                self._static_data[f"security_{k}"] = v
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
         self._static_data_ts = time.time()
 
-    def monitor_system(self):
+    def monitor_system(self) -> None:
         """Monitor system and send updates to OLED and Web.
 
         Optimized: non-blocking CPU sampling, cached static data,
@@ -1343,11 +1513,6 @@ class FiteboxManager:
 
         # Warmup call - first cpu_percent(interval=None) always returns 0
         psutil.cpu_percent(interval=None)
-
-        # Initial static data refresh
-        self._static_data = {}
-        self._static_data_ts = 0
-        self._refresh_static_data()
 
         while self.running and self.connected:
             try:
@@ -1361,9 +1526,11 @@ class FiteboxManager:
 
                 # Disk
                 disk = psutil.disk_usage(
-                    settings.RECORDING_DIR
-                    if os.path.exists(settings.RECORDING_DIR)
-                    else "/"
+                    (
+                        settings.RECORDING_DIR
+                        if os.path.exists(settings.RECORDING_DIR)
+                        else "/"
+                    ),
                 )
                 disk_pct = int(disk.percent)
                 disk_free_gb = disk.free / (1024**3)
@@ -1385,7 +1552,7 @@ class FiteboxManager:
                 recording_time = 0
                 if self.state["recording"]:
                     recording_time = int(
-                        now - self.state["recording_start_time"]
+                        now - self.state["recording_start_time"],
                     )
 
                 # Network rates (from /proc/net/dev - zero forks)
@@ -1397,14 +1564,17 @@ class FiteboxManager:
                         for iface in ("wlan0", "eth0"):
                             cur = net_stats.get(iface, {"rx": 0, "tx": 0})
                             prev = self._prev_net_stats.get(
-                                iface, {"rx": 0, "tx": 0}
+                                iface,
+                                {"rx": 0, "tx": 0},
                             )
                             net_rates[iface] = {
                                 "rx_rate": max(
-                                    0, (cur["rx"] - prev["rx"]) / dt
+                                    0,
+                                    (cur["rx"] - prev["rx"]) / dt,
                                 ),
                                 "tx_rate": max(
-                                    0, (cur["tx"] - prev["tx"]) / dt
+                                    0,
+                                    (cur["tx"] - prev["tx"]) / dt,
                                 ),
                             }
                 self._prev_net_stats = net_stats
@@ -1465,26 +1635,30 @@ class FiteboxManager:
             time.sleep(interval)
 
     @staticmethod
-    def _read_cpu_temp():
+    def _read_cpu_temp() -> int:
         """Read CPU temperature from sysfs - no subprocess fork."""
         try:
             with open(
-                "/sys/class/thermal/thermal_zone0/temp", "r", encoding="utf8"
+                "/sys/class/thermal/thermal_zone0/temp",
+                encoding="utf8",
             ) as f:
                 return int(f.read().strip()) // 1000
         except Exception:
             return 0
 
-    def get_cpu_temp(self):
+    def get_cpu_temp(self) -> int:
         """Legacy wrapper for _read_cpu_temp."""
         return self._read_cpu_temp()
 
-    def get_gpu_temp(self):
+    def get_gpu_temp(self) -> int:
         """GPU temp - on RPi5 same die as CPU, return cpu temp."""
         return self._read_cpu_temp()
 
-    def get_ip_address(self):
-        """Get IP address of wlan0 interface using ip command (no subprocess if possible)."""
+    def get_ip_address(self) -> str:
+        """
+        Get IP address of wlan0 interface using ip command (no subprocess if
+        possible)
+        """
         try:
             result = subprocess.run(
                 ["ip", "-4", "-o", "addr", "show", "wlan0"],
@@ -1500,8 +1674,11 @@ class FiteboxManager:
         except Exception:
             return ""
 
-    def get_eth_ip(self):
-        """Get IP address of eth0 interface using ip command, but only if carrier is detected (cable connected)."""
+    def get_eth_ip(self) -> str:
+        """
+        Get IP address of eth0 interface using ip command, but only if carrier
+        is detected (cable connected)
+        """
         try:
             # Check eth0 has carrier (cable connected) before trying to get IP
             state = subprocess.run(
@@ -1528,8 +1705,11 @@ class FiteboxManager:
         except Exception:
             return ""
 
-    def get_current_ssid(self):
-        """Get current connected WiFi SSID using nmcli. Returns empty string if not connected or on error."""
+    def get_current_ssid(self) -> str:
+        """
+        Get current connected WiFi SSID using nmcli. Returns empty string if
+        not connected or on error
+        """
         try:
             result = subprocess.run(
                 ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"],
@@ -1545,7 +1725,7 @@ class FiteboxManager:
         except Exception:
             return ""
 
-    def get_network_stats(self):
+    def get_network_stats(self) -> dict[str, dict[str, int]]:
         """Get RX/TX bytes for wlan0 and eth0 from sysfs"""
         stats = {}
         for iface in ("wlan0", "eth0"):
@@ -1565,8 +1745,11 @@ class FiteboxManager:
                 stats[iface] = {"rx": 0, "tx": 0}
         return stats
 
-    def count_recordings(self):
-        """Count .mkv recording files in the recording directory. Returns 0 if directory doesn't exist or on error."""
+    def count_recordings(self) -> int:
+        """
+        Count .mkv recording files in the recording directory. Returns 0 if
+        directory doesn't exist or on error
+        """
         try:
             if not os.path.exists(settings.RECORDING_DIR):
                 return 0
@@ -1575,13 +1758,16 @@ class FiteboxManager:
                     f
                     for f in os.listdir(settings.RECORDING_DIR)
                     if f.endswith(".mkv")
-                ]
+                ],
             )
         except Exception:
             return 0
 
-    def get_last_recording(self):
-        """Get the most recent .mkv recording file in the recording directory. Returns empty string if none found or on error."""
+    def get_last_recording(self) -> str:
+        """
+        Get the most recent .mkv recording file in the recording directory.
+        Returns empty string if none found or on error.
+        """
         try:
             if not os.path.exists(settings.RECORDING_DIR):
                 return ""
@@ -1596,7 +1782,7 @@ class FiteboxManager:
 
             files.sort(
                 key=lambda x: os.path.getmtime(
-                    os.path.join(settings.RECORDING_DIR, x)
+                    os.path.join(settings.RECORDING_DIR, x),
                 ),
                 reverse=True,
             )
@@ -1604,7 +1790,7 @@ class FiteboxManager:
         except Exception:
             return ""
 
-    def list_recordings(self, limit=20):
+    def list_recordings(self, limit: int = 20) -> list[Recording]:
         """List recordings sorted by date (newest first)."""
         try:
             if not os.path.exists(settings.RECORDING_DIR):
@@ -1616,11 +1802,11 @@ class FiteboxManager:
             ]
             files.sort(
                 key=lambda x: os.path.getmtime(
-                    os.path.join(settings.RECORDING_DIR, x)
+                    os.path.join(settings.RECORDING_DIR, x),
                 ),
                 reverse=True,
             )
-            result = []
+            result: list[Recording] = []
             for f in files[:limit]:
                 path = os.path.join(settings.RECORDING_DIR, f)
                 try:
@@ -1634,13 +1820,13 @@ class FiteboxManager:
             print(f"❌ list_recordings error: {e}")
             return []
 
-    def send_recording_list(self):
+    def send_recording_list(self) -> None:
         """Send recording list to OLED."""
         recordings = self.list_recordings()
         self.send_status_update(recording_list=recordings)
         print(f"📁 Sent {len(recordings)} recordings")
 
-    def delete_recording(self, filename):
+    def delete_recording(self, filename: str) -> None:
         """Delete a recording file."""
         if not filename:
             print("⚠️  No filename to delete")
@@ -1664,22 +1850,27 @@ class FiteboxManager:
 
     # === CONTROL PRINCIPAL ===
 
-    def run(self):
-        """Launch the manager: connect to OLED, start monitor thread, send initial status, and listen for commands."""
+    def run(self) -> None:
+        """
+        Launch the manager: connect to OLED, start monitor thread, send initial
+        status, and listen for commands
+        """
         print("=" * 50)
         print("  FITEBOX Action Manager v2.0")
         print("=" * 50)
         print(f"  Web key: {self.web_key}")
         print("")
 
-        # Connect to OLED - if it fails, we can still run and serve web, just without OLED updates
+        # Connect to OLED - if it fails, we can still run and serve web, just
+        # without OLED updates
         if not self.connect():
             print("❌ Failed to connect, exiting")
             return
 
         # Start monitor in separte thread
         self.monitor_thread = threading.Thread(
-            target=self.monitor_system, daemon=True
+            target=self.monitor_system,
+            daemon=True,
         )
         self.monitor_thread.start()
         print("✅ System monitor started")
@@ -1696,32 +1887,41 @@ class FiteboxManager:
             web_key=self.web_key,
         )
 
-        # Recover ongoing recording if ffmpeg is already running (e.g. manager restarted during recording)
+        # Recover ongoing recording if ffmpeg is already running (e.g. manager
+        # restarted during recording)
         self._recover_recording_state()
-        # Recover current session from schedule if room is set (e.g. after reboot)
+        # Recover current session from schedule if room is set (e.g. after
+        # reboot)
         self.refresh_current_session()
 
-        print(
-            "\n✅ Manager ready, listening for commands... "
-            f"[recording={self.state['recording']}]\n"
-        )
+        # Wait a couple seconds
+        time.sleep(3)
 
         # Ready
         if self.state["recording"]:
             # Reconfirm recording
-            plymouth_screen(PlymouthScreen.recording)
+            print("⚠️  SCREEN: Recording in progress")
+            out_screen(OutScreen.recording)
         else:
             # Show ready
-            plymouth_screen(PlymouthScreen.ready)
+            print("📺 SCREEN: Ready screen")
+            out_screen(OutScreen.ready)
 
-        # Listen for commands in the main thread - this will block until shutdown, but that's fine since monitor runs in separate thread
+        print(
+            "\n✅ Manager ready, listening for commands... "
+            f"[recording={self.state['recording']}]\n",
+        )
+
+        # Listen for commands in the main thread - this will block until
+        # shutdown, but that's fine since monitor runs in separate thread
+        print("🎮 Listening for commands...")
         try:
             self.listen_commands()
         except KeyboardInterrupt:
             print("\n⏹️  Stopping...")
         finally:
             if not self.state["recording"]:
-                plymouth_screen(PlymouthScreen.shutdown)
+                out_screen(OutScreen.shutdown)
             self.running = False
             if self.socket:
                 self.socket.close()

@@ -5,11 +5,13 @@ WebSocket client for communicating with OLED controller socket.
 
 import asyncio
 import json
-import socket
 import logging
+import socket
 from typing import Any
 
-from fastapi import WebSocket  # type: ignore # pylint: disable=import-error # noqa: E501
+from fastapi import (  # type: ignore # pylint: disable=import-error # noqa: E501
+    WebSocket,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +26,13 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
         self._lock = asyncio.Lock()
         self.status_data: dict[str, Any] = {}
         self.connected = False
-        self._listener_task: asyncio.Task | None = None
+        self._listener_task: asyncio.Task[None] | None = None
         self._ws_clients: list[WebSocket] = []
-        self._status_callbacks: list = []  # sync callbacks on status update
+        self._status_callbacks: list[Any] = (
+            []
+        )  # sync callbacks on status update
 
-    async def connect(self):
+    async def connect(self) -> bool:
         """Connect to the OLED controller Unix socket."""
 
         if self.simulation:
@@ -54,7 +58,7 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
             self.connected = False
             return False
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         """Disconnect from socket."""
         self.connected = False
         if self._listener_task:
@@ -67,7 +71,7 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
             self._sock.close()
             self._sock = None
 
-    async def reconnect(self):
+    async def reconnect(self) -> bool:
         """Reconnect with retry."""
         await self.disconnect()
         for attempt in range(5):
@@ -77,13 +81,13 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
             await asyncio.sleep(2)
         return False
 
-    async def _listen_loop(self):
+    async def _listen_loop(self) -> None:
         """
         Listen for status updates from the manager (via OLED broadcast).
         """
         loop = asyncio.get_event_loop()
         buffer = ""
-        while self.connected:
+        while self.connected and self._sock:
             try:
                 data = await loop.sock_recv(self._sock, 4096)
                 if not data:
@@ -106,20 +110,20 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
         # Try to reconnect
         asyncio.create_task(self.auto_reconnect())
 
-    async def auto_reconnect(self):
+    async def auto_reconnect(self) -> None:
         """Auto-reconnect after disconnect."""
         await asyncio.sleep(3)
         if not self.connected:
             print("🔄 Attempting reconnect...")
             await self.reconnect()
 
-    async def _process_message(self, message: str):
+    async def _process_message(self, message: str) -> None:
         """Process incoming JSON message from socket."""
         try:
             msg = json.loads(message)
             msg_type = msg.get("type")
 
-            if msg_type in ["status_update", msg_type == "event"]:
+            if msg_type in ["status_update", "event"]:
                 # Update local status cache
                 data = msg.get("data", {})
                 self.status_data.update(data)
@@ -146,7 +150,9 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
             pass
 
     async def send_command(
-        self, command: str, params: dict[str, Any] | None = None
+        self,
+        command: str,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, str]:
         """
         Send a command through the socket (same protocol as OLED buttons).
@@ -167,7 +173,7 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
             self.connected = False
             return {"status": "error", "message": str(e)}
 
-    async def get_status(self) -> dict:
+    async def get_status(self) -> dict[str, Any]:
         """Request fresh status from OLED controller."""
         if not self.connected or not self._sock:
             return self.status_data  # Return cached
@@ -193,10 +199,12 @@ class ManagerSocketClient:  # pylint: disable=too-many-instance-attributes
             self._ws_clients.remove(ws)
 
     def on_status(self, callback):
-        """Register a sync callback for status updates. Called with data dict."""
+        """
+        Register a sync callback for status updates. Called with data dict.
+        """
         self._status_callbacks.append(callback)
 
-    async def _broadcast_ws(self, msg: dict):
+    async def _broadcast_ws(self, msg: dict[str, Any]) -> None:
         """Broadcast message to all connected WebSocket clients."""
         dead = []
         for ws in self._ws_clients:

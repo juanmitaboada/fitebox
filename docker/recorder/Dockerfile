@@ -27,6 +27,18 @@ RUN apt-get update && apt-get install -y \
 RUN curl -fsSL http://archive.raspberrypi.org/debian/raspberrypi.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/raspberrypi.gpg \
     && echo "deb http://archive.raspberrypi.org/debian/ bookworm main" > /etc/apt/sources.list.d/raspi.list
 
+# Docker CLI + Compose (for self-update) + Git
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.gpg] \
+        https://download.docker.com/linux/debian bookworm stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && apt-get update && apt-get install -y \
+        docker-ce-cli \
+        docker-compose-plugin \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Main dependencies
 RUN apt-get update && apt-get install -y \
     supervisor \
@@ -43,6 +55,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-dev \
+    python3-numpy \
     gcc \
     gpiod \
     libgpiod2 \
@@ -81,5 +94,13 @@ RUN date +%y%m%d%H%M%S > /app/BUILD_DATE
 # Set permissions
 RUN chmod +x /entrypoint.sh && \
     chmod +x /app/*.sh 2>/dev/null || true
+
+# Set build mode (default to local for development)
+ARG FITEBOX_BUILD_MODE=local
+LABEL fitebox.build.mode="${FITEBOX_BUILD_MODE}"
+RUN echo "${FITEBOX_BUILD_MODE}" > /app/BUILD_MODE
+
+# Set safe directory for Git operations
+RUN git config --global --add safe.directory /fitebox/project
 
 ENTRYPOINT ["/entrypoint.sh"]

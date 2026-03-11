@@ -312,7 +312,7 @@
             buildAudioMeters(res.audio || [], res.video || []);
             connectAllAudio(res.audio || [], res.video || []);
 
-            // If AudioContext already running (user already clicked before), 
+            // If AudioContext already running (user already clicked before),
             // show buffering directly. Otherwise show activation overlay.
             const overlay = document.getElementById('pv-audio-blocked');
             if (_audioCtx && _audioCtx.state === 'running') {

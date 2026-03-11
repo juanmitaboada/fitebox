@@ -1,4 +1,6 @@
-import gpiod
+from typing import Any
+
+import gpiod  # type:ignore # pylint: disable=import-error
 
 # Patch to handle differences in gpiod v2.x API across versions
 if hasattr(gpiod, "line"):
@@ -14,18 +16,22 @@ elif hasattr(gpiod, "LineDirection"):
     LineSettings = gpiod.LineSettings
     Direction = gpiod.LineDirection
     Bias = gpiod.LineBias
-    Value = None  # In this version, request_lines devuelve 0/1 directamente, no enums de Value
+    # In this version, request_lines returns 0/1 directly, no enums from Value
+    Value = None  # pylint: disable=invalid-name
 else:
     # API v1.x (old) - does not use these for request_lines
-    LineSettings = None
-    Direction = None
-    Bias = None
-    Value = None
+    LineSettings = None  # pylint: disable=invalid-name
+    Direction = None  # pylint: disable=invalid-name
+    Bias = None  # pylint: disable=invalid-name
+    Value = None  # pylint: disable=invalid-name
 
 
 class FiteboxHardware:
     def __init__(
-        self, pin_map, consumer="fitebox_app", debug=False
+        self,
+        pin_map,
+        consumer="fitebox_app",
+        debug=False,
     ):  # pylint: disable=too-many-branches
         """
         Configure the GPIO buttons by detecting API version and Hardware (RPi 4/5).
@@ -44,7 +50,7 @@ class FiteboxHardware:
         # Detect RPi version (only info)
         self.model = None
         try:
-            with open("/proc/device-tree/model", "r", encoding="utf8") as f:
+            with open("/proc/device-tree/model", encoding="utf8") as f:
                 self.model = f.read().strip()
         except Exception:
             pass
@@ -79,7 +85,7 @@ class FiteboxHardware:
                                 pin: LineSettings(
                                     direction=Direction.INPUT,
                                     bias=Bias.PULL_UP,
-                                )
+                                ),
                             },
                         )
                         self.buttons[name] = {
@@ -106,7 +112,7 @@ class FiteboxHardware:
                     if self.debug:
                         version = self.buttons[name]["version"]
                         print(
-                            f"✅ {name} (GPIO {pin}) " f"set [API v{version}]"
+                            f"✅ {name} (GPIO {pin}) " f"set [API v{version}]",
                         )
 
             except Exception as e:
@@ -127,7 +133,7 @@ class FiteboxHardware:
             else:
                 print(
                     "❌ ERROR: no GPIO chip detected. "
-                    "Check permissions or hardware."
+                    "Check permissions or hardware.",
                 )
 
     def __del__(self):
@@ -146,7 +152,7 @@ class FiteboxHardware:
             except Exception:
                 pass
 
-    def read_button(self, name):
+    def read_button(self, name: str) -> int | None:
         """
         Read the current state of the button by name.
         Returns 0 (pressed), 1 (released), or None if not configured.
@@ -159,7 +165,7 @@ class FiteboxHardware:
             print(f"⚠️ Buutton '{name}' no configured.")
         return None
 
-    def read_button_value(self, button):
+    def read_button_value(self, button: dict[str, Any]) -> int | None:
         """
         Read the current value (0 or 1) of the button
         Normalize Value.ACTIVE/INACTIVE to 1/0
@@ -215,7 +221,7 @@ class FiteboxHardware:
             button["last_state"] = current_state
         return events
 
-    def button_pressed(self, name):
+    def button_pressed(self, name: str) -> bool | None:
         """
         Check if a button is currently pressed (active low).
         Returns True if pressed, False if released, or None if not configured.
@@ -225,7 +231,7 @@ class FiteboxHardware:
             return None
         return state == 0
 
-    def button_released(self, name):
+    def button_released(self, name: str) -> bool | None:
         """
         Check if a button is currently released (active low).
         Returns True if released, False if pressed, or None if not configured.

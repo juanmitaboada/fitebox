@@ -23,7 +23,7 @@ cmd_exists() {
 safe_run() {
     local cmd="$1"
     local fallback="${2:-Command not available}"
-    
+
     if eval "$cmd" 2>/dev/null; then
         return 0
     else
@@ -124,13 +124,13 @@ echo ""
 if [ "$ENV_TYPE" = "container" ]; then
     echo "--- CONTAINER INFORMATION ---"
     echo "Container ID: $(hostname)"
-    
+
     if [ -f /.dockerenv ]; then
         echo "Runtime: Docker"
     fi
-    
+
     echo "Privileged mode: $([ -c /dev/mem ] && echo "YES" || echo "NO")"
-    
+
     echo "Mounted /dev devices:"
     ls -la /dev/ 2>/dev/null | grep -E "video|snd|i2c|gpio" | head -10 || echo "Limited /dev access"
     echo ""
@@ -184,7 +184,7 @@ if cmd_exists arecord; then
     else
         echo "arecord failed (check /dev/snd access)"
     fi
-    
+
     if [ -d /proc/asound ]; then
         echo "ALSA Cards:"
         cat /proc/asound/cards 2>/dev/null || echo "No /proc/asound/cards"

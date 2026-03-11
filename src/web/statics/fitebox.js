@@ -11,6 +11,7 @@ const FITEBOX = (() => {
     let _statusData = {};
     let _statusListeners = [];
     let _metricsHistoryListeners = [];
+    let _announceListeners = [];
     let _recTimerInterval = null;
 
     // === CRYPTO: HMAC-SHA256 ===
@@ -138,6 +139,8 @@ const FITEBOX = (() => {
                     _statusListeners.forEach(fn => fn(_statusData));
                 } else if (msg.type === 'metrics_history') {
                     _metricsHistoryListeners.forEach(fn => fn(msg));
+                } else if (msg.type === 'announce') {
+                    _announceListeners.forEach(fn => fn(msg));
                 } else if (msg.type === 'error') {
                     console.error('[WS] Error:', msg);
                     if (msg.message === 'Invalid key') {
@@ -183,6 +186,10 @@ const FITEBOX = (() => {
 
     function onMetricsHistory(fn) {
         _metricsHistoryListeners.push(fn);
+    }
+
+    function onAnnounce(fn) {
+        _announceListeners.push(fn);
     }
 
     function getStatus() { return _statusData; }
@@ -301,7 +308,7 @@ const FITEBOX = (() => {
     return {
         api, get, post,
         authenticate, isAuthenticated, logout,
-        onStatus, onMetricsHistory, getStatus,
+        onStatus, onMetricsHistory, onAnnounce, getStatus,
         toast, confirm,
         formatTime, formatSize, formatDate,
         connectWS,

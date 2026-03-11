@@ -86,8 +86,8 @@ fi
 MODEL=$(cat /proc/device-tree/model)
 echo "[5/10] Configuring $MODEL hardware..."
 
-# Boot to Console Autologin
-raspi-config nonint do_boot_behaviour B2
+# Boot to Console (login required - no autologin for security)
+raspi-config nonint do_boot_behaviour B1
 
 if [[ "$MODEL" == *"Raspberry Pi 5"* ]]; then
     if ! grep -q "dtparam=pciex1_gen=3" /boot/firmware/config.txt; then
@@ -152,9 +152,10 @@ chmod 600 certs/fitebox.key
 # === 10. Docker User Permissions Configuration ===
 echo "[10/10] Configuring Docker user permissions..."
 
-# Detect UID/GID of the real user
+# Detect UID/GID of the real user and ssh dir
 REAL_UID=$(id -u "$REAL_USER")
 REAL_GID=$(id -g "$REAL_USER")
+SSH_DIR=$(eval echo ~"$REAL_USER")/.ssh
 
 echo "   Detected: $REAL_USER (UID=$REAL_UID, GID=$REAL_GID)"
 
@@ -167,6 +168,7 @@ cat > .env <<EOF
 # User permissions (so recordings are owned by '$REAL_USER', not root)
 USER_UID=$REAL_UID
 USER_GID=$REAL_GID
+SSH_DIR=$SSH_DIR
 EOF
 
 chown "$REAL_USER:$REAL_USER" .env

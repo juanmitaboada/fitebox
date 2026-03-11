@@ -2,6 +2,11 @@
 # FITEBOX MASTER MAKEFILE
 # ========================================================
 
+# --- IMAGE CONFIG ---
+GHCR_IMAGE  = ghcr.io/juanmitaboada/fitebox
+DOCKER_IMAGE = docker.io/br0th3r/fitebox
+VERSION     = $(shell cat src/VERSION.txt 2>/dev/null || echo "dev")
+
 default:
 	make up
 
@@ -12,7 +17,7 @@ setup:
 	@echo "🔧 Starting system-level setup..."
 	sudo bash bin/setup.sh
 
-# --- DOCKER MANAGEMENT ---
+# --- DOCKER MANAGEMENT (development) ---
 
 .PHONY: build
 build:
@@ -25,7 +30,6 @@ rebuild:
 
 .PHONY: up
 up:
-	-make screen_boot
 	docker compose up -d
 	@echo "🚀 Fitebox services are running. Use 'make logs' to monitor."
 
@@ -36,7 +40,6 @@ up_build: build
 
 .PHONY: down
 down:
-	-make screen_shutdown
 	docker compose down
 
 .PHONY: restart
@@ -44,21 +47,25 @@ restart: down up
 
 .PHONY: kill
 kill:
-	-# ### Stop the containers
-	$(DOCKER_COMPOSE_TEST) kill
+	-docker compose kill
 
 .PHONY: clean
 clean:
 	docker compose down -v --rmi local
 
+.PHONY: cleancache
+cleancache:
+	@for d in __pycache__ .mypy_cache .pytest_cache .cache .tox ; do \
+		find . -type d -name "$$d" -exec rm -rf {} +; \
+	done
+	@pyclean .
+
 .PHONY: prune
 prune:
-	-# ### Stop and remove containers, networks, AND volumes
-	$(DOCKER_COMPOSE_TEST) down --volumes --rmi all --remove-orphans
+	-docker compose down --volumes --rmi all --remove-orphans
 
 .PHONY: prune_all
-prune_all: cleanup kill
-	-# ### Prune all from this machine
+prune_all: clean
 	docker system prune -a -f
 	docker volume prune -a -f || docker volume prune -f
 
@@ -70,33 +77,62 @@ shell:
 logs:
 	docker compose logs -f
 
-.PHONY: update-deps
+.PHONY: requirements
 requirements:
-	@echo "🔍 Making requirements.txt inside the container..."
-	# 1. Execute a temporary container
-	# 2. Install pip-tools if not already present
-	# 3. Compile the .in and output to stdout to save on the host
-	docker compose run --rm --no-deps --entrypoint /bin/bash recorder -c "pip3 install --break-system-packages --quiet pip-tools && pip-compile --resolver=backtracking /app/requirements.in && cat requirements.txt" > src/requirements.txt
-	@echo "✅ File src/requirements.txt updated and synced with the Docker environment."
+	@echo "🔍 Generating requirements.txt inside container..."
+	docker compose run --rm --no-deps --entrypoint /bin/bash recorder -c \
+		"pip3 install --break-system-packages --quiet pip-tools && \
+		pip-compile --resolver=backtracking /app/requirements.in && \
+		cat requirements.txt" > src/requirements.txt
+	@echo "✅ src/requirements.txt updated."
 
-# --- PLYMOUTH SCREEN CONTROL ---
+# --- PUBLISH (manual deploy to registries) ---
 
-.PHONY: screen_%
-screen_%:
-	make screen
-	sudo plymouth display-message --text="$*"
+.PHONY: publish
+publish: _publish_check _publish_build _publish_push
+	@echo ""
+	@echo "✅ Published FITEBOX v$(VERSION) to:"
+	@echo "   $(GHCR_IMAGE):$(VERSION)"
+	@echo "   $(DOCKER_IMAGE):$(VERSION)"
+	@echo "   Both tagged as :latest"
 
-.PHONY: screen
-screen:
-	sudo plymouth display-message --text=""
+.PHONY: _publish_check
+_publish_check:
+	@echo "📦 Publishing FITEBOX v$(VERSION)..."
+	@echo ""
+	@echo "This will push to:"
+	@echo "  - $(GHCR_IMAGE):$(VERSION)"
+	@echo "  - $(DOCKER_IMAGE):$(VERSION)"
+	@echo ""
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
+	@echo ""
+	@echo "🔑 Checking registry logins..."
+	@docker login ghcr.io 2>/dev/null || \
+		(echo "❌ Not logged in to ghcr.io. Run: docker login ghcr.io" && exit 1)
+	@docker login docker.io 2>/dev/null || \
+		(echo "❌ Not logged in to Docker Hub. Run: docker login" && exit 1)
 
-.PHONY: plymouth_restart
-plymouth_restart:
-	-sudo plymouth quit
-	sleep 1
-	sudo plymouthd --mode=boot --attach-to-session --pid-file=/tmp/plymouth.pid
-	sleep 1
-	sudo plymouth --show-splash
+.PHONY: _publish_build
+_publish_build:
+	@echo "🔨 Building image..."
+	docker build \
+		--build-arg FITEBOX_BUILD_MODE=official \
+		-f docker/recorder/Dockerfile \
+		-t fitebox:$(VERSION) \
+		-t fitebox:latest \
+		.
+
+.PHONY: _publish_push
+_publish_push:
+	@echo "🚀 Tagging and pushing..."
+	docker tag fitebox:$(VERSION) $(GHCR_IMAGE):$(VERSION)
+	docker tag fitebox:$(VERSION) $(GHCR_IMAGE):latest
+	docker tag fitebox:$(VERSION) $(DOCKER_IMAGE):$(VERSION)
+	docker tag fitebox:$(VERSION) $(DOCKER_IMAGE):latest
+	docker push $(GHCR_IMAGE):$(VERSION)
+	docker push $(GHCR_IMAGE):latest
+	docker push $(DOCKER_IMAGE):$(VERSION)
+	docker push $(DOCKER_IMAGE):latest
 
 # --- DIAGNOSTICS & TESTS ---
 

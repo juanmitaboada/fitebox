@@ -1,0 +1,110 @@
+name: Build and Publish Docker Image
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. 1.2-rc5). Must match src/VERSION.txt.'
+        required: true
+
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+  DOCKER_IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/fitebox
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate VERSION.txt matches tag
+        run: |
+          FILE_VERSION=$(cat src/VERSION.txt)
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ ERROR: src/VERSION.txt contains '$FILE_VERSION' but the tag is '$TAG_VERSION'"
+            echo "   Edit src/VERSION.txt, commit the change, and recreate the tag."
+            exit 1
+          fi
+          echo "✅ VERSION.txt ($FILE_VERSION) matches the tag."
+
+      - name: Detect if this is a pre-release
+        id: prerelease
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if echo "$VERSION" | grep -qE '-(rc|alpha|beta|dev)[0-9]*$'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️  Pre-release detected ($VERSION) — latest will NOT be updated."
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️  Stable release ($VERSION) — latest WILL be updated."
+          fi
+
+      - name: Build tag list
+        id: tags
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAGS="${{ env.GHCR_IMAGE }}:${VERSION},${{ env.DOCKER_IMAGE }}:${VERSION}"
+          if [ "${{ steps.prerelease.outputs.is_prerelease }}" = "false" ]; then
+            TAGS="${TAGS},${{ env.GHCR_IMAGE }}:latest,${{ env.DOCKER_IMAGE }}:latest"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (for ARM64 cross-compilation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/recorder/Dockerfile
+          platforms: linux/arm64
+          push: true
+          build-args: |
+            FITEBOX_BUILD_MODE=official
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.title=FITEBOX
+            org.opencontainers.image.description=Autonomous conference recording appliance for Raspberry Pi 5
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.revision=${{ github.sha }}

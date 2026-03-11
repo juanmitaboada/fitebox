@@ -1,3 +1,5 @@
+[← README](../README.md) · [Configuration](configuration.md) · [Recording](recording.md) · [Streaming](streaming.md) · [Recordings](recordings.md) · [Architecture](architecture.md) · [Troubleshooting](troubleshooting.md) · [API](api.md) · 【 **Diagnostics** 】
+
 # FITEBOX - Universal Diagnostics System
 
 ## Overview
@@ -217,3 +219,5 @@ docker exec fitebox-recorder /app/diagnostics.sh | grep -A 20 "VIDEO DEVICES"
 # 5. Save and share
 docker exec fitebox-recorder /app/diagnostics.sh > diagnostic_$(date +%Y%m%d).txt
 ```
+
+[← README](../README.md) · [Configuration](configuration.md) · [Recording](recording.md) · [Streaming](streaming.md) · [Recordings](recordings.md) · [Architecture](architecture.md) · [Troubleshooting](troubleshooting.md) · [API](api.md) · 【 **Diagnostics** 】

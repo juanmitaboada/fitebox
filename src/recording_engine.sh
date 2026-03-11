@@ -95,7 +95,7 @@ get_video() {
     local keywords=("$@")
     for name in "${keywords[@]}"; do
         DEV=$(v4l2-ctl --list-devices 2>/dev/null | grep -i -A1 "$name" | grep "/dev/video" | head -n1 | awk '{print $1}')
-        if [ ! -z "$DEV" ]; then 
+        if [ ! -z "$DEV" ]; then
             echo "$DEV"
             return 0
         fi
@@ -182,9 +182,9 @@ DEV_HDMI_VID=$(get_video "Hagibis" "MS2109" "USB Video" "HDMI")
 
 DEV_CAM_VID=$(get_video "Webcam" "C920" "Angetube" "USB Camera")
 if [ "$DEV_CAM_VID" == "$DEV_HDMI_VID" ] || [ -z "$DEV_CAM_VID" ]; then
-    if [ "$DEV_HDMI_VID" == "/dev/video0" ]; then 
+    if [ "$DEV_HDMI_VID" == "/dev/video0" ]; then
         DEV_CAM_VID="/dev/video2"
-    else 
+    else
         DEV_CAM_VID="/dev/video0"
     fi
 fi
@@ -366,7 +366,7 @@ if kill -0 $MAIN_PID 2>/dev/null; then
 else
     fitebox_lognscreen "ERROR" "FFmpeg failed to start!" | tee -a "$FITEBOX_LOG_FFMPEG"
     write_state "failed"
-    
+
     # Update health file
     if command -v jq >/dev/null 2>&1; then
         jq '.status = "failed"' "$FITEBOX_HEALTH_FILE" > "${FITEBOX_HEALTH_FILE}.tmp" && \
@@ -376,7 +376,7 @@ else
     # Show failure
     fitebox_screen "failure"
     fitebox_screen "FFmpeg failed to start!"
-    
+
     exit 1
 fi
 

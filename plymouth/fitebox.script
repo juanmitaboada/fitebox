@@ -21,7 +21,7 @@ bg_sprite.SetZ(10);
 
 // Usaremos un Sprite normal para el texto
 message_sprite = Sprite();
-message_sprite.SetZ(100); 
+message_sprite.SetZ(100);
 
 // 3. Helper
 fun set_visual(the_image) {
@@ -33,7 +33,7 @@ fun set_visual(the_image) {
 
 // 4. Init
 status = Plymouth.GetMode();
-if (status == "boot") { set_visual(boot_image); } 
+if (status == "boot") { set_visual(boot_image); }
 else { set_visual(shutdown_image); }
 
 // 5. MESSAGE ENGINE (The fix is here)
@@ -47,11 +47,11 @@ fun message_callback (text) {
     else if (text == "off") { set_visual(off_image); }
     else if (text == "failure") { set_visual(failure_image); }
     else {
-        // Creamos una imagen de texto al vuelo. 
+        // Creamos una imagen de texto al vuelo.
         // El formato es: Image.Text(string, red, green, blue, alpha, font_name)
         // Nota: Si esto falla, quita "DejaVu Sans" y deja solo los colores.
         txt_img = Image.Text(text, 1, 1, 1, 1, "DejaVu Sans 32");
-        
+
         message_sprite.SetImage(txt_img);
         message_sprite.SetX(Window.GetWidth() / 2 - txt_img.GetWidth() / 2);
         message_sprite.SetY(Window.GetHeight() * 0.80);

@@ -42,13 +42,13 @@ if pgrep -f "oled_controller.py" > /dev/null 2>&1; then
     echo -e "${YELLOW}⚠️  oled_controller.py is running (PID: $OLED_CONTROLLER_PID)${NC}"
     echo "   This process must be stopped to run diagnostics."
     echo ""
-    
+
     # If in Docker with supervisor, try to stop it gracefully first
     if [ "$ENVIRONMENT" = "container" ] && command -v supervisorctl &> /dev/null; then
         echo "Stopping oled_controller via supervisor..."
         supervisorctl stop oled_controller 2>/dev/null || true
         sleep 2
-        
+
         if pgrep -f "oled_controller.py" > /dev/null 2>&1; then
             echo -e "${YELLOW}⚠️  Supervisor stop failed, killing process...${NC}"
             pkill -f "oled_controller.py" || true
@@ -60,7 +60,7 @@ if pgrep -f "oled_controller.py" > /dev/null 2>&1; then
         pkill -f "oled_controller.py" || true
         sleep 1
     fi
-    
+
     # Check if process is still running
     if pgrep -f "oled_controller.py" > /dev/null 2>&1; then
         echo -e "${RED}❌ ERROR: Could not stop oled_controller.py${NC}"
@@ -69,7 +69,7 @@ if pgrep -f "oled_controller.py" > /dev/null 2>&1; then
         echo "   - In Host: pkill -f oled_controller.py"
         exit 1
     fi
-    
+
     echo -e "${GREEN}✅ oled_controller.py stopped${NC}"
 else
     echo -e "${GREEN}✅ No OLED controller running${NC}"
@@ -182,12 +182,12 @@ def detect_display_size(device):
 
 def test_display(address=0x3C):
     """Test the OLED screen"""
-    
+
     print(f"Connecting to OLED at address {hex(address)}...")
-    
+
     # Intentar diferentes tipos de pantalla
     serial = i2c(port=1, address=address)
-    
+
     # Probar SSD1306 (más común)
     try:
         device = ssd1306(serial)
@@ -203,28 +203,28 @@ def test_display(address=0x3C):
             except Exception as e:
                 print(f"❌ Failed to initialize display: {e}")
                 return False
-    
+
     width, height = detect_display_size(device)
     print(f"✅ Display initialized: {driver} {width}x{height}")
-    
+
     # Test 1: Clear screen
     print("Test 1: Clear screen (black)...")
     with canvas(device) as draw:
         draw.rectangle(device.bounding_box, outline="black", fill="black")
     time.sleep(1)
-    
+
     # Test 2: Full white
     print("Test 2: Full screen (white)...")
     with canvas(device) as draw:
         draw.rectangle(device.bounding_box, outline="white", fill="white")
     time.sleep(1)
-    
+
     # Test 3: Border
     print("Test 3: Border...")
     with canvas(device) as draw:
         draw.rectangle(device.bounding_box, outline="white", fill="black")
     time.sleep(1)
-    
+
     # Test 4: Text
     print("Test 4: Text display...")
     with canvas(device) as draw:
@@ -233,7 +233,7 @@ def test_display(address=0x3C):
         draw.text((10, 25), f"{driver} {width}x{height}", fill="white")
         draw.text((10, 40), "Test OK!", fill="white")
     time.sleep(2)
-    
+
     # Test 5: Animated pattern
     print("Test 5: Animation...")
     for i in range(5):
@@ -242,7 +242,7 @@ def test_display(address=0x3C):
             y = 10 + (i * 10)
             draw.rectangle((10, y, 118, y+8), outline="white", fill="white")
         time.sleep(0.3)
-    
+
     # Final: Info screen (keep it ON)
     print("Test 6: Final info screen...")
     with canvas(device) as draw:
@@ -251,7 +251,7 @@ def test_display(address=0x3C):
         draw.text((5, 20), f"Driver: {driver}", fill="white")
         draw.text((5, 35), f"Size: {width}x{height}", fill="white")
         draw.text((5, 50), f"Addr: {hex(address)}", fill="white")
-    
+
     # IMPORTANT: Keep the screen ON
     # Do not clean up after leaving so the user can check the display output
     print("\n" + "="*40)
@@ -264,13 +264,13 @@ def test_display(address=0x3C):
     print("\nℹ️  Display will stay ON for verification.")
     print("   Press Ctrl+C or wait 60 seconds to exit.")
     print("="*40 + "\n")
-    
+
     # Wait 60 seconds or do Ctrl+C
     try:
         time.sleep(60)
     except KeyboardInterrupt:
         print("\n✅ User interrupted (this is OK)")
-    
+
     return True
 
 if __name__ == "__main__":
@@ -338,7 +338,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "  - Address: $OLED_ADDRESS"
     echo "  - Device: $I2C_DEVICE"
     echo ""
-    
+
     # Restart oled_controller if it was running before
     if [ "$OLED_CONTROLLER_RUNNING" = true ]; then
         echo "Restarting oled_controller.py..."
@@ -356,7 +356,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
         fi
         echo ""
     fi
-    
+
     echo "You can now use oled_controller.py to control the display."
     echo ""
     exit 0
@@ -373,7 +373,7 @@ else
     echo "  - Display contrast too low"
     echo "  - Hardware connection issue"
     echo ""
-    
+
     # Restart oled_controller if it was running before
     if [ "$OLED_CONTROLLER_RUNNING" = true ]; then
         echo "Restarting oled_controller.py..."
@@ -382,7 +382,7 @@ else
         fi
         echo ""
     fi
-    
+
     echo "Check oled_controller.py configuration."
     echo ""
     exit 1

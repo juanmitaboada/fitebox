@@ -5,10 +5,10 @@ Helper functions for shared key management and HMAC signature verification
 
 import hashlib
 import hmac
-import os
-import time
-import secrets
 import logging
+import os
+import secrets
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def load_or_generate_key(key_file: str) -> str:
 
     try:
         if os.path.exists(key_file):
-            with open(key_file, "r", encoding="utf8") as f:
+            with open(key_file, encoding="utf8") as f:
                 key = f.read().strip()
                 if key:
                     return key
@@ -65,7 +65,9 @@ def verify_signature(
 
         # First check against the regular shared key
         expected = hmac.new(
-            shared_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+            shared_key.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
         ).hexdigest()
 
         verified = hmac.compare_digest(signature, expected)

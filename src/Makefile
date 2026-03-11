@@ -11,6 +11,10 @@ fitebox_manager:
 fitebox_web:
 	make -C web web
 
+.PHONY: fitebox_display
+fitebox_display:
+	./fitebox_display.py
+
 # === RECORDING === ========================================
 
 .PHONY: recording_start
@@ -27,27 +31,27 @@ recording_stop:
 	-make screen
 
 
-# === PLYMOUTH === =========================================
+# === SCREEN MANAGEMENT === ================================
 
-.PHONY: screen_% 
+.PHONY: screen_%
 screen_%:
-	plymouth display-message --text="$*"
+	/usr/bin/python3 /app/fitebox_display.py $*
 
 .PHONY: screen
 screen:
-	plymouth display-message --text=""
+	/usr/bin/python3 /app/fitebox_display.py --text ""
 
 .PHONY: convert_background_1080p
 convert_background_1080p:
 	ffmpeg -i background.png -vf scale=1920:1080 background_1080p.png
 
-.PHONY: plymouth_restart
-plymouth_restart:
-	-plymouth quit
-	sleep 1
-	plymouthd --mode=boot --attach-to-session --pid-file=/tmp/plymouth.pid
-	sleep 1
-	plymouth --show-splash
+# .PHONY: plymouth_restart
+# plymouth_restart:
+# 	-plymouth quit
+# 	sleep 1
+# 	plymouthd --mode=boot --attach-to-session --pid-file=/tmp/plymouth.pid
+# 	sleep 1
+# 	plymouth --show-splash
 
 # === OTHERS === ===========================================
 
@@ -62,12 +66,12 @@ supervisor_stop:
 # .PHONY: uptime
 # uptime:
 # 	python3 buttons_controller.py uptime )
-# 
+#
 # .PHONY: reboot
 # reboot:
 # 	python3 buttons_controller.py reboot )
-# 
-# 
+#
+#
 # .PHONY: shutdown
 # shutdown:
 # 	-### Shutdown recording ... ###

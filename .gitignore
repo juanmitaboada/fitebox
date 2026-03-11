@@ -11,3 +11,4 @@ recordings/
 run/
 src/web/requirements.simul
 src/web/simulenv/
+RELEASING.md

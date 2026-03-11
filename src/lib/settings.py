@@ -14,6 +14,7 @@ for _p in _ENV_PATHS:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             for _line in _result.stdout.splitlines():
                 if "=" in _line and _line.startswith("FITEBOX_"):
@@ -42,10 +43,12 @@ DATA_DIR = "/fitebox/data"
 # --- Files ---
 RECORDING_ENGINE = os.path.join(APP_DIR, "recording_engine.sh")
 PID_FILE = _env(
-    "FITEBOX_PID_FILE", os.path.join(RUN_DIR, "fitebox_ffmpeg.pid")
+    "FITEBOX_PID_FILE",
+    os.path.join(RUN_DIR, "fitebox_ffmpeg.pid"),
 )
 HEALTH_FILE = _env(
-    "FITEBOX_HEALTH_FILE", os.path.join(RUN_DIR, "fitebox_health.json")
+    "FITEBOX_HEALTH_FILE",
+    os.path.join(RUN_DIR, "fitebox_health.json"),
 )
 STATE_FILE = os.path.join(RUN_DIR, "fitebox_recording_state.json")
 TITLE_FILE = os.path.join(RUN_DIR, "fitebox_recording_title.txt")
@@ -63,7 +66,18 @@ NETWORK_SCRIPTS = os.path.join(APP_DIR, "network")
 # --- Version ---
 VERSION = "0.1"
 try:
-    with open(os.path.join(APP_DIR, "VERSION.txt")) as _f:
+    with open(os.path.join(APP_DIR, "VERSION.txt"), encoding="utf-8") as _f:
         VERSION = _f.read().strip()
 except Exception:
     pass
+
+# Announce presets (bilingual)
+ANNOUNCE_PRESETS = [
+    {"id": "ready", "en": "Ready to begin", "es": "Listos para comenzar"},
+    {"id": "10min", "en": "10 minutes left", "es": "Quedan 10 minutos"},
+    {"id": "5min", "en": "5 minutes left", "es": "Quedan 5 minutos"},
+    {"id": "3min", "en": "3 minutes left", "es": "Quedan 3 minutos"},
+    {"id": "1min", "en": "1 minute left", "es": "Queda 1 minuto"},
+    {"id": "qa", "en": "Q&A", "es": "Ruegos y preguntas"},
+    {"id": "thanks", "en": "Thank you!", "es": "¡Gracias!"},
+]

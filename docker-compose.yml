@@ -35,22 +35,34 @@ services:
       - ./recordings:/recordings
       - ./config:/config
       - ./data:/fitebox/data
+      - ./images:/app/images:ro
       # - ./src:/app:ro  # Read-only app code
       # - ./tests:/tests:ro  # Read-only test code
-      
+
       # System access (for diagnostics)
       - /dev/bus/usb:/dev/bus/usb:ro  # USB device info
       - /proc:/host/proc:ro            # System info
       - /sys:/host/sys:ro              # Hardware info
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket # DBUS
-      
+
       # Runtime
       - /run/plymouth:/run/plymouth
       - /tmp:/host/tmp                 # Shared temp (for logs)
-      
+
       # Fitebox
       - ./log:/fitebox/log
-    
+
+      # Updates
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/fitebox/project
+      # SSH keys (optional - for git operations)
+      - type: bind
+        source: ${SSH_DIR:-./.ssh}
+        target: /root/.ssh
+        read_only: true
+        bind:
+          create_host_path: true
+
     # Unidades temporales
     tmpfs:
     - /fitebox/run
@@ -64,7 +76,7 @@ services:
       - HOST_SYS=/host/sys
       - USER_UID=${USER_UID:-1000}
       - USER_GID=${USER_GID:-1000}
-    
+
     expose:
       - "8080"
     restart: unless-stopped

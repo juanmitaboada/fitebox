@@ -4,11 +4,13 @@ FITEBOX OLED Client
 Example client to communicate with oled_controller via UNIX socket.
 """
 
-import socket
 import json
+import socket
+import subprocess
 import sys
 import time
-import subprocess
+from typing import Any
+
 import psutil
 
 SOCKET_PATH = "/tmp/fitebox_control.sock"
@@ -21,41 +23,50 @@ class FiteboxClient:
     def connect(self):
         """Connect to the UNIX socket"""
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connected = False
         try:
             self.sock.connect(SOCKET_PATH)
             print(f"✅ Connected to {SOCKET_PATH}")
-            return True
+            connected = True
         except Exception as e:
             print(f"❌ Connection failed: {e}")
-            return False
+        return connected
 
-    def send_message(self, msg):
+    def send_message(self, msg: dict[str, Any]) -> bool:
         """Send a JSON message to the controller"""
-        try:
-            self.sock.sendall((json.dumps(msg) + "\n").encode("utf-8"))
-        except Exception as e:
-            print(f"❌ Send failed: {e}")
-            return False
-        return True
+        sent = False
+        if self.sock:
+            try:
+                self.sock.sendall((json.dumps(msg) + "\n").encode("utf-8"))
+                sent = True
+            except Exception as e:
+                print(f"❌ Send failed: {e}")
+        else:
+            print("❌ Not connected")
+        return sent
 
-    def receive_message(self, timeout=5):
+    def receive_message(self, timeout=5) -> list[dict[str, Any]]:
         """Get a JSON message from the controller (with timeout)"""
-        self.sock.settimeout(timeout)
-        try:
-            data = self.sock.recv(4096).decode("utf-8")
-            if data:
-                # It can contain multiple messages separated by newlines
-                messages = [
-                    json.loads(line)
-                    for line in data.strip().split("\n")
-                    if line
-                ]
-                return messages
-        except socket.timeout:
-            return []
-        except Exception as e:
-            print(f"❌ Receive failed: {e}")
-            return []
+
+        messages = []
+        if self.sock:
+            self.sock.settimeout(timeout)
+            try:
+                data = self.sock.recv(4096).decode("utf-8")
+                if data:
+                    # It can contain multiple messages separated by newlines
+                    messages = [
+                        json.loads(line)
+                        for line in data.strip().split("\n")
+                        if line
+                    ]
+            except socket.timeout:
+                pass
+            except Exception as e:
+                print(f"❌ Receive failed: {e}")
+        else:
+            print("❌ Not connected")
+        return messages
 
     def update_status(self, **kwargs):
         """Update system status"""
@@ -171,21 +182,25 @@ def example_continuous_monitoring():
 
             # Get temperature (Raspberry Pi)
             try:
-                with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+                with open(
+                    "/sys/class/thermal/thermal_zone0/temp",
+                    encoding="utf-8",
+                ) as f:
                     temp = int(f.read().strip()) // 1000
-            except:
+            except Exception:
                 temp = 0
 
             # Get IP address (Linux)
             try:
                 ip = (
                     subprocess.check_output(
-                        "hostname -I | awk '{print $1}'", shell=True
+                        "hostname -I | awk '{print $1}'",
+                        shell=True,
                     )
                     .decode()
                     .strip()
                 )
-            except:
+            except Exception:
                 ip = "0.0.0.0"
 
             # Update status with current system metrics
@@ -200,7 +215,8 @@ def example_continuous_monitoring():
             )
 
             print(
-                f"📊 Updated: CPU={cpu}% MEM={memory}% DISK={disk}% TEMP={temp}°C IP={ip}"
+                f"📊 Updated: CPU={cpu}% MEM={memory}% "
+                f"DISK={disk}% TEMP={temp}°C IP={ip}",
             )
 
             time.sleep(5)
@@ -226,7 +242,7 @@ def interactive_menu():
 5. Get current status
 0. Exit
 
-"""
+""",
     )
 
     choice = input("Select option: ").strip()
@@ -255,7 +271,8 @@ def interactive_menu():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        # Command line mode: python3 oled_client.py [status|record|listen|monitor]
+        # Command line mode:
+        # python3 oled_client.py [status|record|listen|monitor]
         cmd = sys.argv[1]
         if cmd == "status":
             example_update_status()
@@ -268,7 +285,7 @@ if __name__ == "__main__":
         else:
             print(f"Unknown command: {cmd}")
             print(
-                "Usage: python3 oled_client.py [status|record|listen|monitor]"
+                "Usage: python3 oled_client.py [status|record|listen|monitor]",
             )
     else:
         # Interactive menu loop

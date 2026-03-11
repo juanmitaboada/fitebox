@@ -28,7 +28,7 @@ if [ "$FITEBOX_ENVIRONMENT" = "container" ]; then
     FITEBOX_RUN_DIR="/fitebox/run"
     FITEBOX_DATA_DIR="/fitebox/data"
     FITEBOX_CONFIG_DIR="/fitebox/config"
-    
+
 else
     # === HOST PATHS ===
     # Detect root directory: check common locations, then fallback to current directory
@@ -40,7 +40,7 @@ else
         # Fallback: directorio actual
         FITEBOX_ROOT="$(pwd)"
     fi
-    
+
     FITEBOX_APP_DIR="$FITEBOX_ROOT/src"
     FITEBOX_TEST_DIR="$FITEBOX_ROOT/tests"
     FITEBOX_RECORDING_DIR="$HOME/recordings"
@@ -80,22 +80,20 @@ FITEBOX_NAME="FITEBOX"
 fitebox_log() {
     local LEVEL=$1
     shift
-    local MESSAGE="$@"
-    local TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$TIMESTAMP] [$LEVEL] $MESSAGE"
+    local TIMESTAMP
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$TIMESTAMP] [$LEVEL] $*"
 }
 
 fitebox_screen() {
-    local MESSAGE="$@"
-    plymouth display-message --text="$MESSAGE"
+    /usr/bin/python3 /app/fitebox_display.py "$@"
 }
 
 fitebox_lognscreen() {
     local LEVEL=$1
     shift
-    local MESSAGE="$@"
-    fitebox_log "$LEVEL" "$MESSAGE"
-    fitebox_screen "$MESSAGE"
+    fitebox_log "$LEVEL" "$*"
+    fitebox_screen "$@"
 }
 
 # Ensure required directories exist
@@ -194,7 +192,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     echo "Name:    $FITEBOX_NAME"
     echo "Version: $FITEBOX_VERSION"
     echo ""
-    
+
     # Check if directories exist
     echo "=== DIRECTORY CHECK ==="
     for dir in "$FITEBOX_APP_DIR" "$FITEBOX_TEST_DIR" "$FITEBOX_RECORDING_DIR" "$FITEBOX_LOG_DIR" "$FITEBOX_RUN_DIR"; do
@@ -205,7 +203,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         fi
     done
     echo ""
-    
+
     # Check key files
     echo "=== KEY FILES CHECK ==="
     for file in "$FITEBOX_AUDIO_DETECTION" "$FITEBOX_ENGINE_SCRIPT" "$FITEBOX_BACKGROUND_IMAGE"; do
@@ -216,7 +214,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         fi
     done
     echo ""
-    
+
     echo "========================================="
     echo ""
     echo "To use this in your scripts:"
