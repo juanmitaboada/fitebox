@@ -1,0 +1,84 @@
+services:
+  # RECORDING SERVICE
+  recorder:
+    image: docker.io/br0th3r/fitebox:latest
+    container_name: fitebox-recorder
+    privileged: true
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      nproc:
+        soft: 32768
+        hard: 32768
+    shm_size: '256m'
+
+    # Device access
+    devices:
+      - /dev/video0:/dev/video0  # Webcam
+      - /dev/video1:/dev/video1
+      - /dev/video2:/dev/video2  # HDMI capture
+      - /dev/video3:/dev/video3
+      - /dev/snd:/dev/snd        # Audio devices
+      - /dev/i2c-1:/dev/i2c-1    # OLED display
+      - /dev/gpiochip0:/dev/gpiochip0
+      # - /dev/gpiochip4:/dev/gpiochip4  # For RPi5 (this maybe a symlink)
+    device_cgroup_rules:
+      - 'c 81:* rmw'    # major 81 = video devices
+
+    # Volume mounts
+    volumes:
+      # Core mounts
+      - ./recordings:/recordings
+      - ./config:/config
+      - ./data:/fitebox/data
+      - ./images:/app/images:ro
+
+      # System access (for diagnostics)
+      - /dev/bus/usb:/dev/bus/usb:ro  # USB device info
+      - /proc:/host/proc:ro            # System info
+      - /sys:/host/sys:ro              # Hardware info
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket # DBUS
+
+      # Runtime
+      - /run/plymouth:/run/plymouth
+      - /tmp:/host/tmp                 # Shared temp (for logs)
+
+      # Fitebox
+      - ./log:/fitebox/log
+
+      # Updates (self-update via docker pull)
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/fitebox/project
+
+    # Temporary filesystems
+    tmpfs:
+      - /fitebox/run
+
+    # Environment
+    environment:
+      - DISPLAY=:0
+      - PYTHONUNBUFFERED=1
+      - RECORDING_PATH=/recordings
+      - HOST_PROC=/host/proc
+      - HOST_SYS=/host/sys
+      - USER_UID=${USER_UID:-1000}
+      - USER_GID=${USER_GID:-1000}
+
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  # HTTPS PROXY
+  proxy:
+    image: nginx:alpine
+    container_name: fitebox_proxy
+    network_mode: host
+    stop_grace_period: 1s
+    volumes:
+      - ./docker/recorder/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - recorder
+    restart: always
