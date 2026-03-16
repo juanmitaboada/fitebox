@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request as ureq
 import xml.etree.ElementTree as ET  # noqa:N817
 from asyncio.subprocess import Process
 from collections import deque
@@ -79,7 +80,7 @@ from lib.schedule_parser import (  # type: ignore # pylint: disable=import-error
 
 # === CONFIGURATION ===
 MASTER_KEY_FILE = "config/master.key"
-KEY_FILE = "/tmp/fitebox_web.key"
+KEY_FILE = settings.WEB_KEY_FILE
 STREAM_CONFIG_FILE = "/fitebox/data/stream_config.json"
 RECORDINGS_DIR = "/recordings"
 WEB_PORT = 8080
@@ -105,7 +106,8 @@ BASE_DIR = Path(__file__).parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "statics"
 
-
+# Load/generate shared key for HMAC authentication with JS client
+time.sleep(1)
 SHARED_KEY = load_or_generate_key(KEY_FILE)
 SHARED_MASTER_KEY = load_or_generate_key(MASTER_KEY_FILE)
 print(f"🔑 Web key: {SHARED_KEY}")
@@ -5013,7 +5015,9 @@ async def api_system_security_set(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/system/update/check", dependencies=[Depends(verify_auth)])
-async def api_update_check() -> UpdateResult:
+async def api_update_check() -> (
+    UpdateResult
+):  # pylint: disable=too-many-statements
     """Check if an update is available."""
 
     # Determine build mode and current version
@@ -5052,35 +5056,58 @@ async def api_update_check() -> UpdateResult:
 
     try:
         if mode == "official":
-            # Query Docker Hub for latest tag
-            proc = await asyncio.create_subprocess_exec(
+            # Detect the tag the running container was started with
+            inspect_proc = await asyncio.create_subprocess_exec(
                 "docker",
-                "image",
                 "inspect",
+                "fitebox-recorder",
                 "--format",
-                "{{index .RepoDigests 0}}",
-                "br0th3r/fitebox:latest",
+                "{{.Config.Image}}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            local_out, _ = await proc.communicate()
-            local_digest = local_out.decode().strip()
+            inspect_out, _ = await inspect_proc.communicate()
+            running_image = inspect_out.decode().strip()
+            # Extract tag from "docker.io/br0th3r/fitebox:1.2" -> "1.2"
+            running_tag = (
+                running_image.split(":")[-1]
+                if ":" in running_image
+                else "latest"
+            )
+            result["current_version"] = running_tag
 
-            # Pull just the manifest to compare
-            proc2 = await asyncio.create_subprocess_exec(
-                "docker",
-                "manifest",
-                "inspect",
-                "br0th3r/fitebox:latest",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
+            # Query Docker Hub API for the latest stable tag (no pre-releases)
+            hub_url = (
+                "https://hub.docker.com/v2/repositories/br0th3r/fitebox/tags"
+                "?page_size=25&ordering=last_updated"
             )
-            remote_out, _ = await proc2.communicate()
-            result["update_available"] = (
-                proc2.returncode == 0
-                and remote_out.decode().strip() != ""
-                and local_digest not in remote_out.decode()
-            )
+            try:
+                with ureq.urlopen(hub_url, timeout=10) as resp:
+                    hub_data = json.loads(resp.read().decode())
+            except Exception as hub_err:
+                result["error"] = f"Docker Hub API error: {hub_err}"
+                _update_state["available"] = result
+                return result
+
+            tags = [
+                t["name"]
+                for t in hub_data.get("results", [])
+                if t["name"] != "latest"
+                and not re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"])
+            ]
+
+            if tags:
+                latest_stable = tags[0]
+                result["latest_version"] = latest_stable
+
+                def _parse_ver(v: str) -> tuple[int, ...]:
+                    return tuple(int(x) for x in re.findall(r"\d+", v))
+
+                try:
+                    if _parse_ver(latest_stable) > _parse_ver(running_tag):
+                        result["update_available"] = True
+                except Exception:
+                    result["update_available"] = latest_stable != running_tag
         else:
             # Git: fetch and compare
             fetch_proc = await asyncio.create_subprocess_exec(
@@ -5511,7 +5538,8 @@ async def _get_compose_project_name() -> str:
 
 
 async def _restart_via_sidecar() -> None:
-    """Spawn a sidecar container that restarts us.
+    """
+    Spawn a sidecar container that restarts us.
 
     Processes inside a container die when Docker stops it,
     so we launch a separate container with docker socket
@@ -5523,6 +5551,21 @@ async def _restart_via_sidecar() -> None:
 
     project = await _get_compose_project_name()
     log_file = f"{host_dir}/log/update_restart.log"
+
+    # Use the same image the running container was started with
+    inspect_proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "inspect",
+        "fitebox-recorder",
+        "--format",
+        "{{.Config.Image}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    inspect_out, _ = await inspect_proc.communicate()
+    running_image = (
+        inspect_out.decode().strip() or "docker.io/br0th3r/fitebox:latest"
+    )
 
     await asyncio.create_subprocess_exec(
         "docker",
@@ -5537,7 +5580,7 @@ async def _restart_via_sidecar() -> None:
         f"{host_dir}:{host_dir}",
         "-w",
         host_dir,
-        "fitebox-recorder:latest",
+        running_image,
         "sh",
         "-c",
         f"sleep 3 && docker compose -p {project} "

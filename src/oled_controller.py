@@ -30,7 +30,7 @@ from luma.core.render import (  # type: ignore # pylint: disable=import-error # 
 from luma.oled.device import (  # type: ignore # pylint: disable=import-error # noqa: E501
     ssd1306,
 )
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from typing_extensions import TypedDict
 
 from lib import settings
@@ -1898,12 +1898,14 @@ class FiteboxOLED:  # pylint: disable=too-many-instance-attributes
             # Spacing to make it more readable
             keysp = " ".join(list(key))
 
-            # Show the key with spacing
-            draw.text((5, 20), f"Key: {keysp}", fill="white")
+            # Show the key with larger font for readability
+            font_key = ImageFont.truetype("/app/fonts/DejaVuSansMono.ttf", 12)
+            draw.text((5, 16), "Key:", fill="white")
+            draw.text((5, 28), keysp, font=font_key, fill="white")
 
-            # Mostrar URL de acceso
+            # Access URL
             ip = self.status_data.get("ip", "0.0.0.0")
-            draw.text((5, 36), f"http://{ip}", fill="white")
+            draw.text((5, 50), f"http://{ip}", fill="white")
 
             # YouTube streaming indicator
             if self.status_data.get("youtube_streaming"):
@@ -1941,7 +1943,8 @@ class FiteboxOLED:  # pylint: disable=too-many-instance-attributes
                 key = "------"
 
         keysp = " ".join(list(key))
-        draw.text((5, 44), f"{keysp}", fill="white")
+        font_key = ImageFont.truetype("/app/fonts/DejaVuSansMono.ttf", 11)
+        draw.text((5, 50), keysp, font=font_key, fill="white")
 
         qr_img = self._make_qr_big(url, 48)
         if qr_img:

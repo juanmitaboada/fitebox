@@ -3,12 +3,17 @@
 # FITEBOX INSTALL SCRIPT
 # ===========================
 # Downloads all required files and sets up FITEBOX on a fresh Raspberry Pi 5.
-# Usage: curl -fsSL https://raw.githubusercontent.com/juanmitaboada/fitebox/main/bin/install.sh -o install.sh && sudo bash install.sh
+#
+# Usage:
+#   sudo bash install.sh              # installs latest
+#   sudo bash install.sh 1.2          # installs specific version
+#   sudo bash install.sh 1.2-rc1      # installs release candidate
 
 set -e
 
 REPO_RAW="https://raw.githubusercontent.com/juanmitaboada/fitebox/main"
 INSTALL_DIR="/home/${SUDO_USER:-$USER}/fitebox"
+IMAGE_TAG="${1:-latest}"
 
 # --- Root checks ---
 
@@ -22,6 +27,7 @@ echo "---------------------------------------------------"
 echo "  🚀 FITEBOX Installer"
 echo "  👤 Installing for user: $SUDO_USER"
 echo "  📁 Install directory:   $INSTALL_DIR"
+echo "  🐳 Image tag:           $IMAGE_TAG"
 echo "---------------------------------------------------"
 
 # --- Create install directory structure ---
@@ -41,6 +47,10 @@ chmod +x bin/setup.sh
 
 echo "      ✅ Files downloaded."
 
+# --- Inject image tag into docker-compose.yml ---
+
+sed -i "s|image: docker.io/br0th3r/fitebox:latest|image: docker.io/br0th3r/fitebox:${IMAGE_TAG}|" docker-compose.yml
+
 # --- Run setup ---
 
 echo "[2/5] Running system setup (this may take a few minutes)..."
@@ -48,9 +58,8 @@ bash bin/setup.sh
 echo "      ✅ System setup complete."
 
 # --- Pull Docker image ---
-# sg activates the docker group in-session without requiring re-login
 
-echo "[3/5] Pulling FITEBOX Docker image..."
+echo "[3/5] Pulling FITEBOX Docker image (${IMAGE_TAG})..."
 sudo docker compose pull
 echo "      ✅ Image pulled."
 
@@ -63,7 +72,7 @@ echo "      ✅ FITEBOX started."
 # --- Fix ownership (everything was created as root via sudo) ---
 chown -R "$SUDO_USER:$SUDO_USER" "$INSTALL_DIR"
 
-# --- Reboot ---
+# --- Reboot via FITEBOX socket (shows message on OLED/display) ---
 
 echo "[5/5] Rebooting to apply kernel and PCIe changes..."
 echo ""
@@ -77,4 +86,16 @@ echo "---------------------------------------------------"
 echo ""
 
 sleep 3
-reboot
+
+if docker exec fitebox-recorder python3 -c "
+import socket, json
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect('/fitebox/run/fitebox_control.sock')
+s.sendall((json.dumps({'type': 'command', 'action': 'system.reboot'}) + '\n').encode())
+s.close()
+" 2>/dev/null; then
+    echo "  🔄 Reboot requested via FITEBOX."
+else
+    echo "  ⚠️  Could not reach FITEBOX socket, falling back to system reboot..."
+    reboot
+fi

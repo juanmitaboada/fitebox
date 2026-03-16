@@ -29,12 +29,13 @@ One box per room. A volunteer plugs it in before the first talk, collects record
   1. [Why FITEBOX Exists](#1-why-fitebox-exists)
   2. [What You Get](#2-what-you-get)
   3. [Hardware Requirements](#3-hardware-requirements)
-  4. [Software Setup](#4-software-setup)
-  5. [First Boot](#5-first-boot)
-  6. [Documentation](#documentation) - Configuration, Recording, Streaming, Architecture, Troubleshooting, API
-  7. [Project](#project) - Changelog, Contributing, Code of Conduct, Security Policy
-  8. [Credits & Acknowledgments](#credits--acknowledgments)
-  9. [License](#license)
+  4. [Quick Start](#4-quick-start)
+  5. [Software Setup](#5-software-setup)
+  6. [First Boot](#6-first-boot)
+  7. [Documentation](#documentation) - Configuration, Recording, Streaming, Architecture, Troubleshooting, API
+  8. [Project](#project) - Changelog, Contributing, Code of Conduct, Security Policy
+  9. [Credits & Acknowledgments](#credits--acknowledgments)
+  10. [License](#license)
 
 ---
 
@@ -98,9 +99,54 @@ companion build guide: [FITEBOX Build Guide - juanmitaboada.com](https://www.jua
 
 ---
 
-## 4. Software Setup
+## 4. Quick Start
 
-### 4.1 Flash OS directly to the NVMe SSD
+If your hardware is assembled and your Raspberry Pi 5 is running **Raspberry Pi OS Lite (64-bit, Bookworm)**, this is all you need.
+
+**1. Create the FITEBOX user** (from any account with sudo privileges — e.g. the default `pi` user):
+
+```bash
+sudo adduser osc
+sudo usermod -aG sudo osc
+```
+
+> ⚠️ The user needs to be in the `sudo` group during installation. After the first boot, `setup.sh` automatically restricts sudo to only `reboot` and `shutdown` — no password needed for those.
+
+**2. Log in as the new user:**
+
+```bash
+su - osc
+# or reconnect via SSH as osc
+```
+
+**3. Download and run the installer:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/juanmitaboada/fitebox/main/bin/install.sh -o install.sh
+sudo bash install.sh
+```
+
+To install a specific version instead of `latest`:
+
+```bash
+sudo bash install.sh 1.2
+sudo bash install.sh 1.2-rc1
+```
+
+The installer will:
+- Download all required files (`setup.sh`, `docker-compose.yml`, `nginx.conf`)
+- Install Docker, configure audio, optimize the kernel, and generate TLS certificates
+- Pull the FITEBOX Docker image
+- Start the containers
+- Reboot the system (the OLED and display will show a reboot screen)
+
+After reboot, FITEBOX starts automatically. Access the web UI at `https://<your-rpi-ip>`.
+
+---
+
+## 5. Software Setup
+
+### 5.1 Flash OS directly to the NVMe SSD
 
 FITEBOX boots directly from the NVMe SSD - no SD card needed for daily use. Connect the NVMe SSD (via a USB adapter or the PCIe HAT on another Pi) and flash **Raspberry Pi OS Lite (64-bit, Debian 12 Bookworm)** to it using [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 
@@ -130,7 +176,7 @@ SSH in and update:
 sudo apt update && sudo apt upgrade -y
 ```
 
-### 4.2 Enable I2C (for the OLED display)
+### 5.2 Enable I2C (for the OLED display)
 
 ```bash
 sudo raspi-config
@@ -159,7 +205,7 @@ The OLED+buttons integrated module connects to the GPIO header with an 8-wire ri
 
 No external resistors needed - buttons use internal pull-ups via `gpiod`.
 
-### 4.3 Create the recordings directory
+### 5.3 Create the recordings directory
 
 Since the OS and recordings live on the same NVMe SSD, just create the recordings directory on the root filesystem:
 
@@ -168,7 +214,7 @@ sudo mkdir -p /recordings
 sudo chown -R 1000:1000 /recordings
 ```
 
-### 4.4 Choose your deployment method
+### 5.4 Choose your deployment method
 
 FITEBOX can be deployed in two ways:
 
@@ -181,7 +227,7 @@ Both options require running the host setup script first.
 
 ---
 
-### 4.5 Option A: Quick Deploy (pre-built image)
+### 5.5 Option A: Quick Deploy (pre-built image)
 
 Download the setup script and run it:
 
@@ -243,7 +289,7 @@ image: ghcr.io/juanmitaboada/fitebox:1.0
 
 ---
 
-### 4.6 Option B: Build from Source (for development)
+### 5.6 Option B: Build from Source (for development)
 
 ```bash
 sudo apt-get install git
@@ -269,7 +315,7 @@ make publish
 
 ---
 
-### 4.7 What setup.sh does
+### 5.7 What setup.sh does
 
 The setup script must be run with `sudo`. It detects the real user (via
 `$SUDO_USER`) and performs the following:
@@ -310,7 +356,7 @@ Persistent data is stored in Docker volumes mapped to:
 | `/fitebox/run` | Runtime state (sockets, PIDs, health) |
 | `/fitebox/log` | Service logs |
 
-### 4.8 Diagnostics
+### 5.8 Diagnostics
 
 Before your first recording, run the diagnostic tools to verify all hardware is detected:
 
@@ -346,7 +392,7 @@ PRESS/RELEASE events at 100Hz polling.
 
 ---
 
-## 5. First Boot
+## 6. First Boot
 
 When the container starts, four services come up in order:
 
