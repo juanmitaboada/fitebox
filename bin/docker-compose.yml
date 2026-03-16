@@ -33,7 +33,6 @@ services:
       - ./recordings:/recordings
       - ./config:/config
       - ./data:/fitebox/data
-      - ./images:/app/images:ro
 
       # System access (for diagnostics)
       - /dev/bus/usb:/dev/bus/usb:ro  # USB device info
