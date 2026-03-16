@@ -28,10 +28,10 @@ apt install -y curl wget git build-essential v4l-utils alsa-utils bc jq
 if ! [ -x "$(command -v docker)" ]; then
     echo "[2/10] Installing Docker..."
     curl -sSL https://get.docker.com | sh
-    usermod -aG docker "$REAL_USER"
 else
     echo "[2/10] Docker is already installed."
 fi
+usermod -aG docker "$REAL_USER"
 apt install -y docker-compose-plugin
 
 # === 3. Audio & Service Optimization (Disable Pulse/Pipewire) ===
