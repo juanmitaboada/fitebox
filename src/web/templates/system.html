@@ -90,6 +90,22 @@
             </div>
             <div class="text-xs text-dim text-mono" id="update-msg"></div>
         </div>
+
+        <!-- Image Management — shown only when multiple local images exist -->
+        <div id="images-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <span class="text-sm text-mono" style="color:var(--cyan)">&#128190; Local images</span>
+                <button class="btn btn-sm" onclick="loadImages()" title="Refresh" style="width:28px;height:28px;padding:0">&#8635;</button>
+            </div>
+            <div id="images-list"></div>
+            <div style="margin-top:12px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                    <span class="text-sm text-mono" style="color:var(--text-dim)">&#9729; Available on Docker Hub</span>
+                    <button class="btn btn-sm" id="hub-tags-toggle" onclick="toggleHubTags()">Show</button>
+                </div>
+                <div id="hub-tags-list" style="display:none"></div>
+            </div>
+        </div>
     </div>
 
     <!-- === NETWORK === -->
@@ -1556,6 +1572,7 @@
             checkBtn.disabled = false;
             checkBtn.textContent = 'Check for updates';
         }
+        loadImages();
     }
 
     let _updatePollId = null;
@@ -1604,6 +1621,140 @@
             }
         } catch (e) {
             // Server offline (restarting) — keep polling
+        }
+    }
+
+    // === IMAGE MANAGEMENT ===
+
+    let _hubTagsVisible = false;
+
+    async function loadImages() {
+        const section = document.getElementById('images-section');
+        const list = document.getElementById('images-list');
+        try {
+            const res = await FITEBOX.get('/api/system/images');
+            const local = res.local_images || [];
+
+            // Only show section when multiple local images exist
+            if (local.length <= 1) {
+                section.style.display = 'none';
+                return;
+            }
+            section.style.display = '';
+
+            // Render local images
+            list.innerHTML = local.map(img => {
+                const inUse = img.in_use;
+                const inUseBadge = inUse
+                    ? '<span style="color:var(--green);font-size:0.65rem">&#9679; IN USE</span>'
+                    : '';
+                const deleteBtn = !inUse
+                    ? `<button class="btn btn-sm" style="color:var(--red);border-color:var(--red);padding:2px 8px;font-size:0.65rem"
+                         onclick="deleteImage('${img.tag}')" title="Remove">&#128465;</button>`
+                    : '';
+                const switchBtn = !inUse
+                    ? `<button class="btn btn-sm btn-primary" style="padding:2px 8px;font-size:0.65rem"
+                         onclick="switchImage('${img.tag}')">&#9654; Use</button>`
+                    : '';
+                return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;
+                                    border-bottom:1px solid var(--border)">
+                    <span style="font-size:1rem">${inUse ? '&#128190;' : '&#9728;'}</span>
+                    <span class="text-sm text-mono" style="flex:1">${img.tag}</span>
+                    <span class="text-xs text-dim text-mono">${img.size}</span>
+                    ${inUseBadge}
+                    ${switchBtn}
+                    ${deleteBtn}
+                </div>`;
+            }).join('');
+
+            // Populate hub tags if visible
+            if (_hubTagsVisible) renderHubTags(res.hub_tags || []);
+
+        } catch (e) {
+            list.innerHTML = '<span style="color:var(--red);font-size:0.75rem">Failed to load images</span>';
+            section.style.display = '';
+        }
+    }
+
+    function renderHubTags(tags) {
+        const el = document.getElementById('hub-tags-list');
+        if (!tags.length) {
+            el.innerHTML = '<span class="text-xs text-dim text-mono">No stable releases found</span>';
+            return;
+        }
+        el.innerHTML = tags.map(t => {
+            const dlBtn = !t.downloaded
+                ? `<button class="btn btn-sm" style="padding:2px 8px;font-size:0.65rem"
+                     onclick="pullImage('${t.tag}')">&#8659; Pull</button>`
+                : '<span class="text-xs text-mono" style="color:var(--text-dim)">&#10003; local</span>';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+                <span class="text-sm text-mono" style="flex:1">${t.tag}</span>
+                ${dlBtn}
+            </div>`;
+        }).join('');
+    }
+
+    async function toggleHubTags() {
+        _hubTagsVisible = !_hubTagsVisible;
+        const el = document.getElementById('hub-tags-list');
+        const btn = document.getElementById('hub-tags-toggle');
+        el.style.display = _hubTagsVisible ? '' : 'none';
+        btn.textContent = _hubTagsVisible ? 'Hide' : 'Show';
+        if (_hubTagsVisible) {
+            try {
+                const res = await FITEBOX.get('/api/system/images');
+                renderHubTags(res.hub_tags || []);
+            } catch (e) {}
+        }
+    }
+
+    async function deleteImage(tag) {
+        if (!confirm(`Remove local image "${tag}"?`)) return;
+        try {
+            const res = await fetch('/api/system/images/' + encodeURIComponent(tag), {
+                method: 'DELETE',
+                headers: FITEBOX._authHeaders ? FITEBOX._authHeaders() : {},
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: res.statusText }));
+                throw new Error(err.detail || res.statusText);
+            }
+            loadImages();
+        } catch (e) {
+            alert('Failed to remove image: ' + e.message);
+        }
+    }
+
+    async function switchImage(tag) {
+        if (!confirm(`Switch to image "${tag}"? FITEBOX will restart.`)) return;
+        document.getElementById('update-idle').style.display = 'none';
+        document.getElementById('update-progress').style.display = '';
+        try {
+            await FITEBOX.post('/api/system/images/switch', { tag });
+            _updatePollId = setInterval(pollUpdateProgress, 1000);
+        } catch (e) {
+            document.getElementById('update-phase-text').textContent = 'Switch failed: ' + e.message;
+            setTimeout(() => {
+                document.getElementById('update-idle').style.display = '';
+                document.getElementById('update-progress').style.display = 'none';
+            }, 4000);
+        }
+    }
+
+    async function pullImage(tag) {
+        if (!confirm(`Pull image "${tag}" from Docker Hub?`)) return;
+        document.getElementById('update-idle').style.display = 'none';
+        document.getElementById('update-progress').style.display = '';
+        document.getElementById('update-phase-text').textContent = 'Pulling ' + tag + '...';
+        try {
+            await FITEBOX.post('/api/system/update/start', { tag });
+            _updatePollId = setInterval(pollUpdateProgress, 1000);
+        } catch (e) {
+            document.getElementById('update-phase-text').textContent = 'Pull failed: ' + e.message;
+            setTimeout(() => {
+                document.getElementById('update-idle').style.display = '';
+                document.getElementById('update-progress').style.display = 'none';
+            }, 4000);
         }
     }
 

@@ -93,6 +93,7 @@ _SECURITY_DEFAULTS: dict[str, bool] = {
     "disable_delete": False,
     "disable_network": False,
 }
+DOCKER_IMAGE_REPO = "br0th3r/fitebox"
 
 
 logger = logging.getLogger(__name__)
@@ -5208,6 +5209,167 @@ async def api_system_shutdown() -> dict[str, Any]:
     """Shutdown system."""
     result = await manager_client.send_command("system.shutdown")
     return result
+
+
+# === IMAGE MANAGEMENT ===
+
+
+@app.get("/api/system/images", dependencies=[Depends(verify_auth)])
+async def api_system_images() -> dict[str, Any]:
+    """List local FITEBOX images and available tags on Docker Hub."""
+
+    # Get running image tag
+    inspect_proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "inspect",
+        "fitebox-recorder",
+        "--format",
+        "{{.Config.Image}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    inspect_out, _ = await inspect_proc.communicate()
+    running_image = inspect_out.decode().strip()
+    running_tag = (
+        running_image.split(":")[-1] if ":" in running_image else "latest"
+    )
+
+    # List local images for this repo
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "images",
+        "--format",
+        "{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+
+    import re as _re
+
+    local_images = []
+    for line in out.decode().strip().splitlines():
+        parts = line.split("|")
+        if len(parts) != 3:
+            continue
+        full_tag, image_id, size = parts
+        if DOCKER_IMAGE_REPO not in full_tag:
+            continue
+        tag = full_tag.split(":")[-1] if ":" in full_tag else full_tag
+        local_images.append(
+            {
+                "tag": tag,
+                "image_id": image_id[:12],
+                "size": size,
+                "in_use": tag == running_tag,
+            },
+        )
+
+    # Fetch available tags from Docker Hub (stable only)
+    import json as _json
+    import urllib.request as _req
+
+    hub_tags = []
+    try:
+        hub_url = (
+            "https://hub.docker.com/v2/repositories/"
+            f"{DOCKER_IMAGE_REPO}/tags?page_size=25&ordering=last_updated"
+        )
+        with _req.urlopen(hub_url, timeout=10) as resp:
+            hub_data = _json.loads(resp.read().decode())
+        local_tag_names = {img["tag"] for img in local_images}
+        hub_tags = [
+            {"tag": t["name"], "downloaded": t["name"] in local_tag_names}
+            for t in hub_data.get("results", [])
+            if t["name"] != "latest"
+            and not _re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"])
+        ]
+    except Exception:
+        pass
+
+    return {
+        "running_tag": running_tag,
+        "local_images": local_images,
+        "hub_tags": hub_tags,
+    }
+
+
+@app.delete("/api/system/images/{tag}", dependencies=[Depends(verify_auth)])
+async def api_system_images_delete(tag: str) -> dict[str, Any]:
+    """Remove a local FITEBOX image by tag."""
+
+    # Refuse to delete the running image
+    inspect_proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "inspect",
+        "fitebox-recorder",
+        "--format",
+        "{{.Config.Image}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    inspect_out, _ = await inspect_proc.communicate()
+    running_tag = inspect_out.decode().strip().split(":")[-1]
+    if tag == running_tag:
+        raise HTTPException(
+            status_code=400, detail="Cannot delete the running image",
+        )
+
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "rmi",
+        f"docker.io/{DOCKER_IMAGE_REPO}:{tag}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=out.decode().strip()[:200],
+        )
+    return {"status": "ok", "message": f"Image {tag} removed"}
+
+
+@app.post("/api/system/images/switch", dependencies=[Depends(verify_auth)])
+async def api_system_images_switch(request: Request) -> dict[str, Any]:
+    """Switch the running image to a locally available tag and restart."""
+    body = await request.json()
+    tag = body.get("tag", "").strip()
+    if not tag:
+        raise HTTPException(status_code=400, detail="Missing tag")
+
+    # Verify the image exists locally
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "image",
+        "inspect",
+        f"docker.io/{DOCKER_IMAGE_REPO}:{tag}",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    if proc.returncode != 0:
+        raise HTTPException(
+            status_code=404, detail=f"Image {tag} not found locally",
+        )
+
+    # Update docker-compose.yml image tag
+    import re as _re
+
+    compose_path = Path(COMPOSE_FILE)
+    compose_text = compose_path.read_text(encoding="utf-8")
+    compose_text = _re.sub(
+        rf"image:\s*docker\.io/{re.escape(DOCKER_IMAGE_REPO)}:[^\s]+",
+        f"image: docker.io/{DOCKER_IMAGE_REPO}:{tag}",
+        compose_text,
+    )
+    compose_path.write_text(compose_text, encoding="utf-8")
+
+    # Restart via sidecar
+    await _update_notify(90, "restarting", f"Switching to {tag}...")
+    await _restart_via_sidecar()
+    return {"status": "ok", "message": f"Switching to {tag}, restarting..."}
 
 
 # === WEBSOCKET ===
