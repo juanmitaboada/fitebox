@@ -84,6 +84,7 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 RUN mkdir -p /recordings /tmp /fitebox/run /fitebox/log /app /tests
 
 # Copy project files
+COPY images/ /app/images/
 COPY docker/recorder/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/recorder/entrypoint.sh /entrypoint.sh
 

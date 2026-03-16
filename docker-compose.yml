@@ -25,7 +25,6 @@ services:
       - /dev/snd:/dev/snd        # Audio devices
       - /dev/i2c-1:/dev/i2c-1    # OLED display
       - /dev/gpiochip0:/dev/gpiochip0
-      # - /dev/gpiochip4:/dev/gpiochip4  # For RPi5 (this maybe a symlink)
     device_cgroup_rules:
       - 'c 81:* rmw'    # major 81 = video devices
 
@@ -35,9 +34,6 @@ services:
       - ./recordings:/recordings
       - ./config:/config
       - ./data:/fitebox/data
-      - ./images:/app/images:ro
-      # - ./src:/app:ro  # Read-only app code
-      # - ./tests:/tests:ro  # Read-only test code
 
       # System access (for diagnostics)
       - /dev/bus/usb:/dev/bus/usb:ro  # USB device info
@@ -87,9 +83,6 @@ services:
     container_name: fitebox_proxy
     network_mode: host
     stop_grace_period: 1s
-    # ports:
-    #   - "80:80"   # Para la redirección
-    #   - "443:443" # Para HTTPS seguro
     volumes:
       - ./docker/recorder/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
