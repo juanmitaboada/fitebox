@@ -5245,8 +5245,6 @@ async def api_system_images() -> dict[str, Any]:
     )
     out, _ = await proc.communicate()
 
-    import re as _re
-
     local_images = []
     for line in out.decode().strip().splitlines():
         parts = line.split("|")
@@ -5266,23 +5264,20 @@ async def api_system_images() -> dict[str, Any]:
         )
 
     # Fetch available tags from Docker Hub (stable only)
-    import json as _json
-    import urllib.request as _req
-
     hub_tags = []
     try:
         hub_url = (
             "https://hub.docker.com/v2/repositories/"
             f"{DOCKER_IMAGE_REPO}/tags?page_size=25&ordering=last_updated"
         )
-        with _req.urlopen(hub_url, timeout=10) as resp:
-            hub_data = _json.loads(resp.read().decode())
+        with ureq.urlopen(hub_url, timeout=10) as resp:
+            hub_data = json.loads(resp.read().decode())
         local_tag_names = {img["tag"] for img in local_images}
         hub_tags = [
             {"tag": t["name"], "downloaded": t["name"] in local_tag_names}
             for t in hub_data.get("results", [])
             if t["name"] != "latest"
-            and not _re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"])
+            and not re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"])
         ]
     except Exception:
         pass
@@ -5312,7 +5307,8 @@ async def api_system_images_delete(tag: str) -> dict[str, Any]:
     running_tag = inspect_out.decode().strip().split(":")[-1]
     if tag == running_tag:
         raise HTTPException(
-            status_code=400, detail="Cannot delete the running image",
+            status_code=400,
+            detail="Cannot delete the running image",
         )
 
     proc = await asyncio.create_subprocess_exec(
@@ -5351,15 +5347,14 @@ async def api_system_images_switch(request: Request) -> dict[str, Any]:
     await proc.wait()
     if proc.returncode != 0:
         raise HTTPException(
-            status_code=404, detail=f"Image {tag} not found locally",
+            status_code=404,
+            detail=f"Image {tag} not found locally",
         )
 
     # Update docker-compose.yml image tag
-    import re as _re
-
     compose_path = Path(COMPOSE_FILE)
     compose_text = compose_path.read_text(encoding="utf-8")
-    compose_text = _re.sub(
+    compose_text = re.sub(
         rf"image:\s*docker\.io/{re.escape(DOCKER_IMAGE_REPO)}:[^\s]+",
         f"image: docker.io/{DOCKER_IMAGE_REPO}:{tag}",
         compose_text,
