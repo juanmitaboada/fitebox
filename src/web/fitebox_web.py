@@ -5145,8 +5145,19 @@ async def api_update_check() -> (
                 latest_stable = tags[0]
                 result["latest_version"] = latest_stable
 
-                def _parse_ver(v: str) -> tuple[int, ...]:
-                    return tuple(int(x) for x in re.findall(r"\d+", v))
+                def _parse_ver(v: str) -> tuple[tuple[int, ...], bool, int]:
+                    # Extrae (base_tuple, is_stable, pre_num)
+                    # Examples:
+                    #   "1.3"     -> ((1,3), True,  0)   stable, wins to any RC
+                    #   "1.3-rc4" -> ((1,3), False, 4)
+                    #   "1.3-rc1" -> ((1,3), False, 1)
+                    pre = re.search(r"-(rc|alpha|beta|dev)(\d*)$", v)
+                    base = tuple(
+                        int(x) for x in re.findall(r"\d+", v.split("-")[0])
+                    )
+                    if pre:
+                        return (base, False, int(pre.group(2) or 0))
+                    return (base, True, 0)
 
                 try:
                     current_parsed = _parse_ver(running_tag)
@@ -5373,8 +5384,12 @@ async def api_system_images() -> (
     # Merge: all known tags (local + all hub), sorted descending
     all_tags: set[str] = set(local_map.keys()) | set(hub_all)
 
-    def _ver_key(v: str) -> tuple[int, ...]:
-        return tuple(int(x) for x in re.findall(r"\d+", v))
+    def _ver_key(v: str) -> tuple[tuple[int, ...], bool, int]:
+        pre = re.search(r"-(rc|alpha|beta|dev)(\d*)$", v)
+        base = tuple(int(x) for x in re.findall(r"\d+", v.split("-")[0]))
+        if pre:
+            return (base, False, int(pre.group(2) or 0))
+        return (base, True, 0)
 
     images: list[DockerImage] = []
     for tag in sorted(all_tags, key=_ver_key, reverse=True):
@@ -6009,9 +6024,13 @@ async def _restart_via_sidecar() -> None:
         running_image,
         "sh",
         "-c",
+        f"OLD=$(docker inspect fitebox-recorder --format '{{{{.Image}}}}' 2>/dev/null); "  # noqa: E501
+        f"OLD_TAG=$(docker inspect fitebox-recorder --format '{{{{.Config.Image}}}}' 2>/dev/null); "  # noqa: E501
         f"sleep 3 && docker compose -p {project} "
-        f"up -d --force-recreate --no-deps recorder "
-        f">> {log_file} 2>&1",
+        f"up -d --force-recreate --no-deps recorder >> {log_file} 2>&1 && "
+        f'if [ -n "$OLD" ] && echo "$OLD_TAG" | grep -qvE \'-(rc|alpha|beta|dev)[0-9]*$\'; then '  # noqa: E501
+        f'docker image rm "$OLD" >> {log_file} 2>&1 || true; '
+        f"fi",
     )
     logger.info(
         f"Sidecar updater launched "
@@ -6019,11 +6038,92 @@ async def _restart_via_sidecar() -> None:
     )
 
 
+async def _resolve_latest_tag() -> str | None:
+    """
+    Resolve the 'latest' alias to its concrete version tag.
+
+    Tries local digest match first, falls back to Docker Hub API.
+    Returns the version string (e.g. '1.3') or None if unresolvable.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "images",
+        "--format",
+        "{{.Repository}}:{{.Tag}}|{{.Digest}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+    latest_digest: str | None = None
+    local_map: dict[str, str] = {}
+    for line in out.decode().strip().splitlines():
+        parts = line.split("|")
+        if len(parts) != 2:
+            continue
+        full_tag, digest = parts
+        if DOCKER_IMAGE_REPO not in full_tag:
+            continue
+        tag = full_tag.split(":")[-1] if ":" in full_tag else full_tag
+        if tag == "latest":
+            latest_digest = digest.strip()
+        else:
+            local_map[tag] = digest.strip()
+
+    if latest_digest:
+        for tag, digest in local_map.items():
+            if digest and digest == latest_digest:
+                return tag
+
+    try:
+        hub_url = (
+            "https://hub.docker.com/v2/repositories/"
+            f"{DOCKER_IMAGE_REPO}/tags?page_size=25&ordering=last_updated"
+        )
+        with ureq.urlopen(hub_url, timeout=10) as resp:
+            hub_data = json.loads(resp.read().decode())
+        hub_latest_digest: str | None = None
+        hub_meta: dict[str, str] = {}
+        for t in hub_data.get("results", []):
+            images_list = t.get("images", [])
+            arm64 = next(
+                (i for i in images_list if i.get("architecture") == "arm64"),
+                images_list[0] if images_list else {},
+            )
+            arm64_digest = (arm64.get("digest", "") or "").replace(
+                "sha256:",
+                "",
+            )[:12]
+            if t["name"] == "latest":
+                hub_latest_digest = arm64_digest
+                continue
+            hub_meta[t["name"]] = arm64_digest
+        if hub_latest_digest:
+            for tag, digest in hub_meta.items():
+                if digest == hub_latest_digest:
+                    return tag
+    except Exception:
+        pass
+
+    return None
+
+
 async def _update_official() -> None:
     """Update from Docker Hub: pull + restart."""
     await _update_notify(5, "pulling", "Pulling latest image...")
 
     project = await _get_compose_project_name()
+
+    # Update docker-compose.yml to point to latest before pulling,
+    # then resolve the concrete tag after pull to avoid running as 'latest'
+    compose_path = Path(COMPOSE_FILE)
+    compose_text = compose_path.read_text(encoding="utf-8")
+    compose_text = re.sub(
+        rf"image:\s*docker\.io/{re.escape(DOCKER_IMAGE_REPO)}:[^\s]+",
+        f"image: docker.io/{DOCKER_IMAGE_REPO}:latest",
+        compose_text,
+    )
+    compose_path.write_text(compose_text, encoding="utf-8")
+    await _update_notify(8, "pulling", "Pulling latest image...")
 
     proc = await asyncio.create_subprocess_exec(
         "docker",
@@ -6070,7 +6170,24 @@ async def _update_official() -> None:
     if proc.returncode != 0:
         raise RuntimeError("Docker pull failed")
 
-    await _update_notify(85, "restarting", "Restarting container...")
+    # Resolve 'latest' -> concrete tag and update compose to avoid
+    # running with tag 'latest' (breaks in_use detection and update check)
+    resolved_tag = await _resolve_latest_tag()
+    if resolved_tag:
+        compose_text = compose_path.read_text(encoding="utf-8")
+        compose_text = re.sub(
+            rf"image:\s*docker\.io/{re.escape(DOCKER_IMAGE_REPO)}:[^\s]+",
+            f"image: docker.io/{DOCKER_IMAGE_REPO}:{resolved_tag}",
+            compose_text,
+        )
+        compose_path.write_text(compose_text, encoding="utf-8")
+        await _update_notify(
+            85,
+            "restarting",
+            f"Restarting container ({resolved_tag})...",
+        )
+    else:
+        await _update_notify(85, "restarting", "Restarting container...")
     await asyncio.sleep(1)
     await _update_notify(95, "restarting", "Applying update...")
     await _restart_via_sidecar()

@@ -142,6 +142,35 @@ The installer will:
 
 After reboot, FITEBOX starts automatically. Access the web UI at `https://<your-rpi-ip>`.
 
+**To update to a new version**, use the web UI (System → Check for updates):
+
+![Fitebox Upgrading System](doc/img/fitebox_system_upgrade.jpeg)
+
+**or run:**
+
+```bash
+cd ~/fitebox
+docker compose pull
+docker compose up -d
+```
+
+**To pin a specific version or test a pre-release**, edit `~/fitebox/docker-compose.yml` and change the image tag, then recreate the container:
+
+```yaml
+# Docker Hub
+image: docker.io/br0th3r/fitebox:1.2
+# GitHub Container Registry
+image: ghcr.io/juanmitaboada/fitebox:1.2
+# Pre-release
+image: docker.io/br0th3r/fitebox:1.3-rc4
+```
+
+```bash
+docker compose up -d --force-recreate recorder
+```
+
+Pre-release tags (`-rc`, `-beta`, `-alpha`, `-dev`) are published alongside stable releases but never replace `latest`.
+
 ---
 
 ## 5. Software Setup
@@ -214,82 +243,7 @@ sudo mkdir -p /recordings
 sudo chown -R 1000:1000 /recordings
 ```
 
-### 5.4 Choose your deployment method
-
-FITEBOX can be deployed in two ways:
-
-- **Option A: Quick Deploy** - download a pre-built Docker image. No
-  compilation, no cloning the full repository. Recommended for production.
-- **Option B: Build from Source** - clone the repository and build the Docker
-  image locally. Recommended for development and customization.
-
-Both options require running the host setup script first.
-
----
-
-### 5.5 Option A: Quick Deploy (pre-built image)
-
-Download the setup script and run it:
-
-```bash
-sudo apt-get install -y git curl
-git clone --depth 1 https://github.com/juanmitaboada/fitebox.git /tmp/fitebox-setup
-cd /tmp/fitebox-setup
-sudo ./bin/setup.sh
-```
-
-**A reboot is required** after setup ([what setup.sh does](#37-what-setupsh-does)).
-
-After reboot, create a deployment directory:
-
-```bash
-mkdir -p ~/fitebox && cd ~/fitebox
-
-# Download production compose file and nginx config
-curl -LO https://raw.githubusercontent.com/juanmitaboada/fitebox/main/deploy/docker-compose.yml
-curl -LO https://raw.githubusercontent.com/juanmitaboada/fitebox/main/deploy/nginx.conf
-
-# Create data directories
-mkdir -p recordings config data log certs
-
-# Copy TLS certificates from setup (or generate new ones)
-cp /tmp/fitebox-setup/certs/* certs/ 2>/dev/null || \
-  openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-    -keyout certs/fitebox.key -out certs/fitebox.crt \
-    -subj "/C=ES/ST=Fitebox/O=Fitebox/CN=fitebox.local"
-
-# Create .env with your user (so recordings are owned by you, not root)
-echo "USER_UID=$(id -u)" > .env
-echo "USER_GID=$(id -g)" >> .env
-
-# Pull and start
-docker compose pull
-docker compose up -d
-```
-
-That is it. FITEBOX is running.
-
-The image is available at:
-
-- `ghcr.io/juanmitaboada/fitebox` (GitHub Container Registry)
-- `docker.io/br0th3r/fitebox` (Docker Hub)
-
-To update to a new version:
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-To pin a specific version instead of `latest`, edit `docker-compose.yml`:
-
-```yaml
-image: ghcr.io/juanmitaboada/fitebox:1.0
-```
-
----
-
-### 5.6 Option B: Build from Source (for development)
+### 5.4 Build from Source (for development)
 
 ```bash
 sudo apt-get install git
@@ -315,7 +269,7 @@ make publish
 
 ---
 
-### 5.7 What setup.sh does
+### 5.5 What setup.sh does
 
 The setup script must be run with `sudo`. It detects the real user (via
 `$SUDO_USER`) and performs the following:
