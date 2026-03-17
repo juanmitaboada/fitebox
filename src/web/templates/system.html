@@ -79,7 +79,7 @@
                 <span class="text-sm text-mono" id="update-latest" style="display:none">Latest: <b id="update-latest-ver"></b></span>
                 <div id="update-status" class="text-sm text-dim text-mono"></div>
                 <div style="flex:1"></div>
-                <button class="btn btn-sm" id="update-check-btn" onclick="checkUpdate()">Check for updates</button>
+                <button class="btn btn-sm" id="update-check-btn" onclick="checkAndRefresh()">Check for updates</button>
                 <button class="btn btn-sm btn-primary" id="update-start-btn" style="display:none" onclick="startUpdate()">Update now</button>
             </div>
         </div>
@@ -91,20 +91,12 @@
             <div class="text-xs text-dim text-mono" id="update-msg"></div>
         </div>
 
-        <!-- Image Management — shown only when multiple local images exist -->
+        <!-- Image Management — shown only when multiple images exist -->
         <div id="images-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-                <span class="text-sm text-mono" style="color:var(--cyan)">&#128190; Local images</span>
-                <button class="btn btn-sm" onclick="loadImages()" title="Refresh" style="width:28px;height:28px;padding:0">&#8635;</button>
+            <div style="margin-bottom:10px">
+                <span class="text-sm text-mono" style="color:var(--cyan)">&#128190; Images</span>
             </div>
             <div id="images-list"></div>
-            <div style="margin-top:12px">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                    <span class="text-sm text-mono" style="color:var(--text-dim)">&#9729; Available on Docker Hub</span>
-                    <button class="btn btn-sm" id="hub-tags-toggle" onclick="toggleHubTags()">Show</button>
-                </div>
-                <div id="hub-tags-list" style="display:none"></div>
-            </div>
         </div>
     </div>
 
@@ -1537,7 +1529,7 @@
     async function checkUpdate() {
         const status = document.getElementById('update-status');
         const startBtn = document.getElementById('update-start-btn');
-        const checkBtn = document.querySelector('[onclick="checkUpdate()"]');
+        const checkBtn = document.getElementById('update-check-btn');
         status.innerHTML = '<span style="color:var(--text-dim)">Connecting to server...</span>';
         startBtn.style.display = 'none';
         checkBtn.disabled = true;
@@ -1626,49 +1618,94 @@
 
     // === IMAGE MANAGEMENT ===
 
-    let _hubTagsVisible = false;
+    async function checkAndRefresh() {
+        await checkUpdate();
+        await loadImages();
+    }
 
     async function loadImages() {
         const section = document.getElementById('images-section');
         const list = document.getElementById('images-list');
         try {
             const res = await FITEBOX.get('/api/system/images');
-            const local = res.local_images || [];
+            const images = res.images || [];
 
-            // Only show section when multiple local images exist
-            if (local.length <= 1) {
+            if (!res.show_section) {
                 section.style.display = 'none';
                 return;
             }
             section.style.display = '';
 
-            // Render local images
-            list.innerHTML = local.map(img => {
-                const inUse = img.in_use;
-                const inUseBadge = inUse
-                    ? '<span style="color:var(--green);font-size:0.65rem">&#9679; IN USE</span>'
+            list.innerHTML = images.map(img => {
+                const icon = img.downloaded ? '&#128190;' : '&#127760;';
+                const iconColor = img.downloaded ? '' : 'color:var(--text-dim)';
+
+                const inUseBadge = img.in_use
+                    ? '<span style="color:var(--green);font-size:0.65rem;white-space:nowrap">&#9679; IN USE</span>'
                     : '';
-                const deleteBtn = !inUse
+                const latestBadge = img.is_latest
+                    ? '<span style="color:var(--cyan);font-size:0.65rem;white-space:nowrap;border:1px solid var(--cyan);padding:1px 5px;border-radius:3px">latest</span>'
+                    : '';
+                const useBtn = img.downloaded && !img.in_use
+                    ? `<button class="btn btn-sm btn-primary" style="padding:2px 8px;font-size:0.65rem;white-space:nowrap"
+                         onclick="switchImage('${img.tag}')">&#9654; Use</button>`
+                    : '';
+                const pullBtn = !img.downloaded
+                    ? `<button class="btn btn-sm" style="padding:2px 8px;font-size:0.65rem;white-space:nowrap"
+                         onclick="pullImage('${img.tag}')">&#8659; Pull</button>`
+                    : '';
+                const deleteBtn = img.deletable
                     ? `<button class="btn btn-sm" style="color:var(--red);border-color:var(--red);padding:2px 8px;font-size:0.65rem"
                          onclick="deleteImage('${img.tag}')" title="Remove">&#128465;</button>`
                     : '';
-                const switchBtn = !inUse
-                    ? `<button class="btn btn-sm btn-primary" style="padding:2px 8px;font-size:0.65rem"
-                         onclick="switchImage('${img.tag}')">&#9654; Use</button>`
+
+
+                // Format date: handles "2026-03-16 19:57:01 +0000 UTC" and "2026-03-16T18:58:00Z"
+                function fmtDate(raw) {
+                    if (!raw) return null;
+                    const m = raw.match(/(\d{4})-(\d{2})-(\d{2})[T\s]+(\d{2}):(\d{2})/);
+                    if (!m) return raw.slice(0, 16);
+                    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                    return `${parseInt(m[3])} ${months[parseInt(m[2])-1]} ${m[1]}, ${m[4]}:${m[5]}`;
+                }
+
+                // Size: "584 MB → 2.39 GB" for local, "584 MB" for hub-only
+                const sizeStr = img.downloaded && img.size
+                    ? (img.hub_size ? `${img.hub_size} → ${img.size}` : img.size)
+                    : img.size || null;
+                const sizeText2 = sizeStr
+                    ? `<span style="font-size:0.68rem;color:var(--text-dim);font-family:var(--mono);white-space:nowrap">${sizeStr}</span>`
                     : '';
-                return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;
-                                    border-bottom:1px solid var(--border)">
-                    <span style="font-size:1rem">${inUse ? '&#128190;' : '&#9728;'}</span>
-                    <span class="text-sm text-mono" style="flex:1">${img.tag}</span>
-                    <span class="text-xs text-dim text-mono">${img.size}</span>
-                    ${inUseBadge}
-                    ${switchBtn}
-                    ${deleteBtn}
+
+                // Meta: digest · date · size — all inline, separator dots
+                const metaParts = [
+                    img.digest || null,
+                    img.created_at ? fmtDate(img.created_at) : null,
+                    sizeStr,
+                ].filter(Boolean);
+                const metaText = metaParts.length
+                    ? `<span style="font-size:0.68rem;color:var(--text-dim);font-family:var(--mono);white-space:nowrap">${metaParts.join(' · ')}</span>`
+                    : '';
+
+                // Build meta parts with icons
+                const metaParts2 = [
+                    img.digest ? `&#128273; ${img.digest}` : null,
+                    img.created_at ? `&#128197; ${fmtDate(img.created_at)}` : null,
+                    sizeStr || null,
+                ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+                return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+                    <span style="font-size:1rem;flex-shrink:0;${iconColor}">${icon}</span>
+                    <span class="text-sm text-mono" style="flex-shrink:0;min-width:60px">${img.tag}</span>
+                    <span style="font-size:0.68rem;color:var(--text-dim);font-family:var(--mono);flex:1;min-width:180px;white-space:normal">${metaParts2}</span>
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0">
+                        ${latestBadge}
+                        ${inUseBadge}
+                        ${useBtn}${pullBtn}
+                        ${deleteBtn}
+                    </div>
                 </div>`;
             }).join('');
-
-            // Populate hub tags if visible
-            if (_hubTagsVisible) renderHubTags(res.hub_tags || []);
 
         } catch (e) {
             list.innerHTML = '<span style="color:var(--red);font-size:0.75rem">Failed to load images</span>';
@@ -1676,57 +1713,18 @@
         }
     }
 
-    function renderHubTags(tags) {
-        const el = document.getElementById('hub-tags-list');
-        if (!tags.length) {
-            el.innerHTML = '<span class="text-xs text-dim text-mono">No stable releases found</span>';
-            return;
-        }
-        el.innerHTML = tags.map(t => {
-            const dlBtn = !t.downloaded
-                ? `<button class="btn btn-sm" style="padding:2px 8px;font-size:0.65rem"
-                     onclick="pullImage('${t.tag}')">&#8659; Pull</button>`
-                : '<span class="text-xs text-mono" style="color:var(--text-dim)">&#10003; local</span>';
-            return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-                <span class="text-sm text-mono" style="flex:1">${t.tag}</span>
-                ${dlBtn}
-            </div>`;
-        }).join('');
-    }
-
-    async function toggleHubTags() {
-        _hubTagsVisible = !_hubTagsVisible;
-        const el = document.getElementById('hub-tags-list');
-        const btn = document.getElementById('hub-tags-toggle');
-        el.style.display = _hubTagsVisible ? '' : 'none';
-        btn.textContent = _hubTagsVisible ? 'Hide' : 'Show';
-        if (_hubTagsVisible) {
-            try {
-                const res = await FITEBOX.get('/api/system/images');
-                renderHubTags(res.hub_tags || []);
-            } catch (e) {}
-        }
-    }
-
     async function deleteImage(tag) {
-        if (!confirm(`Remove local image "${tag}"?`)) return;
+        if (!await FITEBOX.confirm('Remove image', `Delete local image "${tag}"? This cannot be undone.`)) return;
         try {
-            const res = await fetch('/api/system/images/' + encodeURIComponent(tag), {
-                method: 'DELETE',
-                headers: FITEBOX._authHeaders ? FITEBOX._authHeaders() : {},
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ detail: res.statusText }));
-                throw new Error(err.detail || res.statusText);
-            }
+            await FITEBOX.api('DELETE', '/api/system/images/' + encodeURIComponent(tag));
             loadImages();
         } catch (e) {
-            alert('Failed to remove image: ' + e.message);
+            FITEBOX.toast('Failed to remove image: ' + e.message, 'error');
         }
     }
 
     async function switchImage(tag) {
-        if (!confirm(`Switch to image "${tag}"? FITEBOX will restart.`)) return;
+        if (!await FITEBOX.confirm('Switch image', `Switch to "${tag}"? FITEBOX will restart.`)) return;
         document.getElementById('update-idle').style.display = 'none';
         document.getElementById('update-progress').style.display = '';
         try {
@@ -1741,20 +1739,63 @@
         }
     }
 
+    let _pullPollId = null;
+
     async function pullImage(tag) {
-        if (!confirm(`Pull image "${tag}" from Docker Hub?`)) return;
-        document.getElementById('update-idle').style.display = 'none';
-        document.getElementById('update-progress').style.display = '';
-        document.getElementById('update-phase-text').textContent = 'Pulling ' + tag + '...';
+        if (!await FITEBOX.confirm('Pull image', `Download "${tag}" from Docker Hub?`)) return;
         try {
-            await FITEBOX.post('/api/system/update/start', { tag });
-            _updatePollId = setInterval(pollUpdateProgress, 1000);
+            await FITEBOX.post('/api/system/images/pull', { tag });
+            _showPullProgress(tag);
+            _pullPollId = setInterval(() => _pollPullProgress(tag), 1000);
         } catch (e) {
-            document.getElementById('update-phase-text').textContent = 'Pull failed: ' + e.message;
-            setTimeout(() => {
-                document.getElementById('update-idle').style.display = '';
-                document.getElementById('update-progress').style.display = 'none';
-            }, 4000);
+            FITEBOX.toast('Pull failed: ' + e.message, 'error');
+        }
+    }
+
+    function _showPullProgress(tag) {
+        const list = document.getElementById('images-list');
+        const existing = document.getElementById('pull-progress-row');
+        if (existing) existing.remove();
+        const row = document.createElement('div');
+        row.id = 'pull-progress-row';
+        row.style.cssText = 'padding:10px 0;border-bottom:1px solid var(--border)';
+        row.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <span style="font-size:1rem">&#127760;</span>
+                <span class="text-sm text-mono" style="flex:1">${tag}</span>
+                <span class="text-xs text-mono" style="color:var(--cyan)" id="pull-pct">0%</span>
+            </div>
+            <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+                <div id="pull-bar" style="height:100%;background:var(--cyan);width:0%;transition:width 0.5s"></div>
+            </div>
+            <div class="text-xs text-dim text-mono" id="pull-msg" style="margin-top:4px"></div>`;
+        list.prepend(row);
+    }
+
+    async function _pollPullProgress(tag) {
+        try {
+            const p = await FITEBOX.get('/api/system/images/pull/status');
+            const bar = document.getElementById('pull-bar');
+            const pct = document.getElementById('pull-pct');
+            const msg = document.getElementById('pull-msg');
+            if (bar) bar.style.width = p.percent + '%';
+            if (pct) pct.textContent = p.percent + '%';
+            if (msg) msg.textContent = p.message || '';
+
+            if (p.error) {
+                clearInterval(_pullPollId);
+                FITEBOX.toast('Pull failed: ' + p.error, 'error');
+                document.getElementById('pull-progress-row')?.remove();
+                return;
+            }
+            if (!p.active && p.percent === 100) {
+                clearInterval(_pullPollId);
+                document.getElementById('pull-progress-row')?.remove();
+                FITEBOX.toast(`${tag} downloaded successfully`, 'info');
+                loadImages();
+            }
+        } catch (e) {
+            // server hiccup — keep polling
         }
     }
 
@@ -1783,6 +1824,7 @@
                 document.getElementById('update-status').innerHTML = '<span style="color:var(--green)">&#10003; Up to date</span>';
             }
         } catch (e) {}
+        loadImages();
     })();
 
     function showRestartOverlay() {

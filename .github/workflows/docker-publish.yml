@@ -52,7 +52,7 @@ jobs:
         id: prerelease
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if echo "$VERSION" | grep -qE '-(rc|alpha|beta|dev)[0-9]*$'; then
+          if [[ "$VERSION" =~ -(rc|alpha|beta|dev)[0-9]*$ ]]; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
             echo "ℹ️  Pre-release detected ($VERSION) — latest will NOT be updated."
           else

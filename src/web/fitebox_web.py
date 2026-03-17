@@ -93,10 +93,19 @@ _SECURITY_DEFAULTS: dict[str, bool] = {
     "disable_delete": False,
     "disable_network": False,
 }
-DOCKER_IMAGE_REPO = "br0th3r/fitebox"
-
 
 logger = logging.getLogger(__name__)
+
+DOCKER_IMAGE_REPO = "br0th3r/fitebox"
+
+# Pull state: tracks active background pulls
+_pull_state: dict[str, Any] = {
+    "active": False,
+    "tag": None,
+    "percent": 0,
+    "message": "",
+    "error": None,
+}
 if SIMULATION:
     logger.warning(
         "⚠️  Running in SIMULATION mode - no actual manager connection",
@@ -311,6 +320,33 @@ class PreviewInfo(DetectedDevices):
 class PreviewCache(TypedDict):
     devices: DetectedDevices | None
     ts: float
+
+
+class DockerLocalImage(TypedDict):
+    image_id: str
+    size: str
+    digest: str
+    created_at: str
+
+
+class DockerRemoteImage(TypedDict):
+    digest: str
+    pushed_at: str
+    size: str | None
+
+
+class DockerImage(TypedDict):
+    tag: str
+    downloaded: bool
+    in_use: bool
+    is_latest: bool
+    is_stable: bool
+    deletable: bool
+    size: str | None
+    hub_size: str | None
+    image_id: str | None
+    created_at: str | None
+    digest: str | None
 
 
 # --- Web UI Responses ---
@@ -5215,8 +5251,10 @@ async def api_system_shutdown() -> dict[str, Any]:
 
 
 @app.get("/api/system/images", dependencies=[Depends(verify_auth)])
-async def api_system_images() -> dict[str, Any]:
-    """List local FITEBOX images and available tags on Docker Hub."""
+async def api_system_images() -> (
+    dict[str, Any]
+):  # pylint: disable=too-many-statements
+    """Unified list of FITEBOX images: local + Docker Hub, merged."""
 
     # Get running image tag
     inspect_proc = await asyncio.create_subprocess_exec(
@@ -5234,37 +5272,53 @@ async def api_system_images() -> dict[str, Any]:
         running_image.split(":")[-1] if ":" in running_image else "latest"
     )
 
-    # List local images for this repo
+    # List local images — include digest to resolve 'latest' alias
     proc = await asyncio.create_subprocess_exec(
         "docker",
         "images",
         "--format",
-        "{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}",
+        "{{.Repository}}:{{.Tag}}|{{.ID}}|"
+        "{{.Size}}|{{.Digest}}|{{.CreatedAt}}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
     out, _ = await proc.communicate()
 
-    local_images = []
+    local_map: dict[str, DockerLocalImage] = {}
+    latest_digest: str | None = None
+
     for line in out.decode().strip().splitlines():
         parts = line.split("|")
-        if len(parts) != 3:
+        if len(parts) != 5:
             continue
-        full_tag, image_id, size = parts
+        full_tag, image_id, size, digest, created_at = parts
         if DOCKER_IMAGE_REPO not in full_tag:
             continue
         tag = full_tag.split(":")[-1] if ":" in full_tag else full_tag
-        local_images.append(
-            {
-                "tag": tag,
-                "image_id": image_id[:12],
-                "size": size,
-                "in_use": tag == running_tag,
-            },
-        )
+        if tag == "latest":
+            latest_digest = digest.strip()
+            continue
+        local_map[tag] = {
+            "image_id": image_id[:12],
+            "size": size,
+            "digest": digest.strip(),
+            "created_at": created_at.strip(),
+        }
 
-    # Fetch available tags from Docker Hub (stable only)
-    hub_tags = []
+    # Find which version 'latest' points to by digest match (local first)
+    latest_points_to: str | None = None
+    if latest_digest:
+        for tag, tinfo in local_map.items():
+            if tinfo["digest"] and tinfo["digest"] == latest_digest:
+                latest_points_to = tag
+                break
+
+    # Fetch ALL hub tags (stable + pre-release, excluding 'latest' alias)
+    hub_all: list[str] = []
+    hub_stable_set: set[str] = set()
+    hub_meta: dict[str, DockerRemoteImage] = (
+        {}
+    )  # tag -> {digest, pushed_at, size}
     try:
         hub_url = (
             "https://hub.docker.com/v2/repositories/"
@@ -5272,20 +5326,199 @@ async def api_system_images() -> dict[str, Any]:
         )
         with ureq.urlopen(hub_url, timeout=10) as resp:
             hub_data = json.loads(resp.read().decode())
-        local_tag_names = {img["tag"] for img in local_images}
-        hub_tags = [
-            {"tag": t["name"], "downloaded": t["name"] in local_tag_names}
-            for t in hub_data.get("results", [])
-            if t["name"] != "latest"
-            and not re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"])
-        ]
+        hub_latest_digest: str | None = None
+        for t in hub_data.get("results", []):
+            images_list = t.get("images", [])
+            arm64 = next(
+                (i for i in images_list if i.get("architecture") == "arm64"),
+                images_list[0] if images_list else {},
+            )
+            arm64_digest = (arm64.get("digest", "") or "").replace(
+                "sha256:",
+                "",
+            )[:12]
+            if t["name"] == "latest":
+                hub_latest_digest = arm64_digest
+                continue
+            hub_all.append(t["name"])
+            if not re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"]):
+                hub_stable_set.add(t["name"])
+            size_mb = arm64.get("size", 0) / (1024 * 1024)
+            hub_meta[t["name"]] = {
+                "digest": arm64_digest,
+                "pushed_at": t.get("tag_last_pushed", ""),
+                "size": f"{size_mb:.0f} MB" if size_mb else None,
+            }
+        # Resolve latest -> tag via hub digest if not resolved locally
+        if not latest_points_to and hub_latest_digest:
+            for tag, meta in hub_meta.items():
+                if meta.get("digest") == hub_latest_digest:
+                    latest_points_to = tag
+                    break
     except Exception:
         pass
 
+    # Merge: all known tags (local + all hub), sorted descending
+    all_tags: set[str] = set(local_map.keys()) | set(hub_all)
+
+    def _ver_key(v: str) -> tuple[int, ...]:
+        return tuple(int(x) for x in re.findall(r"\d+", v))
+
+    images: list[DockerImage] = []
+    for tag in sorted(all_tags, key=_ver_key, reverse=True):
+        info = local_map.get(tag)
+        is_latest = tag == latest_points_to
+        is_stable = tag in hub_stable_set
+        is_deletable = (
+            info is not None and tag != running_tag and not is_latest
+        )
+        hub_info: DockerRemoteImage | None = hub_meta.get(tag)
+        images.append(
+            {
+                "tag": tag,
+                "downloaded": info is not None,
+                "in_use": tag == running_tag,
+                "is_latest": is_latest,
+                "is_stable": is_stable,
+                "deletable": is_deletable,
+                "size": (
+                    info["size"]
+                    if info
+                    else (hub_info["size"] if hub_info else None)
+                ),
+                "hub_size": (
+                    hub_info["size"] if hub_info else None
+                ),  # compressed size from Docker Hub
+                "image_id": info["image_id"] if info else None,
+                "created_at": (
+                    info["created_at"]
+                    if info
+                    else (hub_info["pushed_at"] if hub_info else None)
+                ),
+                "digest": (
+                    info["digest"].replace("sha256:", "")[:12]
+                    if info and info.get("digest")
+                    else (
+                        hub_info["digest"].replace("sha256:", "")[:12]
+                        if hub_info and hub_info.get("digest")
+                        else None
+                    )
+                ),
+            },
+        )
+
+    # Show section only when user has at least one non-stable local image
+    # (RC, alpha, beta, dev) — indicates advanced usage
+    show_section = any(i["downloaded"] and not i["is_stable"] for i in images)
+
     return {
         "running_tag": running_tag,
-        "local_images": local_images,
-        "hub_tags": hub_tags,
+        "latest_points_to": latest_points_to,
+        "images": images,
+        "show_section": show_section,
+    }
+
+
+@app.post("/api/system/images/pull", dependencies=[Depends(verify_auth)])
+async def api_system_images_pull(  # pylint: disable=too-many-statements
+    request: Request,
+) -> dict[str, Any]:
+    """Pull a specific FITEBOX image tag from Docker Hub without restarting."""
+    body = await request.json()
+    tag = body.get("tag", "").strip()
+    if not tag:
+        raise HTTPException(status_code=400, detail="Missing tag")
+
+    if _pull_state["active"]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Already pulling {_pull_state['tag']}",
+        )
+
+    image = f"docker.io/{DOCKER_IMAGE_REPO}:{tag}"
+
+    async def _do_pull() -> None:
+        _pull_state["active"] = True
+        _pull_state["tag"] = tag
+        _pull_state["percent"] = 0
+        _pull_state["message"] = "Starting..."
+        _pull_state["error"] = None
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker",
+                "pull",
+                image,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+
+            # Parse docker pull output to estimate progress, layers go through:
+            # Pulling -> Downloading -> Extracting -> Pull complete
+            layer_status: dict[str, str] = {}
+            while proc.stdout:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                text = line.decode(errors="replace").strip()
+                if not text:
+                    continue
+                _pull_state["message"] = text[:80]
+
+                # Track layer progress
+                if "Pulling fs layer" in text or "Waiting" in text:
+                    lid = text.split()[0]
+                    layer_status[lid] = "waiting"
+                elif "Downloading" in text:
+                    lid = text.split()[0]
+                    layer_status[lid] = "downloading"
+                elif "Extracting" in text:
+                    lid = text.split()[0]
+                    layer_status[lid] = "extracting"
+                elif "Pull complete" in text or "Already exists" in text:
+                    lid = text.split()[0]
+                    layer_status[lid] = "done"
+
+                if layer_status:
+                    done = sum(1 for s in layer_status.values() if s == "done")
+                    extracting = sum(
+                        1 for s in layer_status.values() if s == "extracting"
+                    )
+                    downloading = sum(
+                        1 for s in layer_status.values() if s == "downloading"
+                    )
+                    total = len(layer_status)
+                    # Weight: done=100%, extracting=75%, downloading=40%
+                    weighted = done * 100 + extracting * 75 + downloading * 40
+                    _pull_state["percent"] = min(
+                        95,
+                        int(weighted / max(total, 1)),
+                    )
+
+            await proc.wait()
+            if proc.returncode == 0:
+                _pull_state["percent"] = 100
+                _pull_state["message"] = "Done"
+            else:
+                _pull_state["error"] = "docker pull failed"
+        except Exception as e:
+            _pull_state["error"] = str(e)
+        finally:
+            _pull_state["active"] = False
+
+    asyncio.create_task(_do_pull())
+    return {"status": "ok", "message": f"Pulling {image}..."}
+
+
+@app.get("/api/system/images/pull/status", dependencies=[Depends(verify_auth)])
+async def api_system_images_pull_status() -> dict[str, Any]:
+    """Return current pull progress."""
+    return {
+        "active": _pull_state["active"],
+        "tag": _pull_state["tag"],
+        "percent": _pull_state["percent"],
+        "message": _pull_state["message"],
+        "error": _pull_state["error"],
     }
 
 
@@ -5309,6 +5542,33 @@ async def api_system_images_delete(tag: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=400,
             detail="Cannot delete the running image",
+        )
+
+    # Refuse to delete the version that 'latest' points to
+    latest_proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "images",
+        "--format",
+        "{{.Repository}}:{{.Tag}}|{{.Digest}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    latest_out, _ = await latest_proc.communicate()
+    latest_digest = None
+    tag_digest = None
+    for line in latest_out.decode().strip().splitlines():
+        parts = line.split("|")
+        if len(parts) != 2 or DOCKER_IMAGE_REPO not in parts[0]:
+            continue
+        t = parts[0].split(":")[-1]
+        if t == "latest":
+            latest_digest = parts[1].strip()
+        elif t == tag:
+            tag_digest = parts[1].strip()
+    if latest_digest and tag_digest and latest_digest == tag_digest:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete the version that 'latest' points to",
         )
 
     proc = await asyncio.create_subprocess_exec(
@@ -5335,7 +5595,6 @@ async def api_system_images_switch(request: Request) -> dict[str, Any]:
     if not tag:
         raise HTTPException(status_code=400, detail="Missing tag")
 
-    # Verify the image exists locally
     proc = await asyncio.create_subprocess_exec(
         "docker",
         "image",
@@ -5351,7 +5610,6 @@ async def api_system_images_switch(request: Request) -> dict[str, Any]:
             detail=f"Image {tag} not found locally",
         )
 
-    # Update docker-compose.yml image tag
     compose_path = Path(COMPOSE_FILE)
     compose_text = compose_path.read_text(encoding="utf-8")
     compose_text = re.sub(
@@ -5361,7 +5619,6 @@ async def api_system_images_switch(request: Request) -> dict[str, Any]:
     )
     compose_path.write_text(compose_text, encoding="utf-8")
 
-    # Restart via sidecar
     await _update_notify(90, "restarting", f"Switching to {tag}...")
     await _restart_via_sidecar()
     return {"status": "ok", "message": f"Switching to {tag}, restarting..."}
