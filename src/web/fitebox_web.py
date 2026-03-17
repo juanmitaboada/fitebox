@@ -176,6 +176,7 @@ class UpdateResult(TypedDict):
     mode: str  # "none", "update", "error"
     current_version: str
     update_available: bool
+    is_prerelease: bool
     latest_version: str | None
     commits_behind: int | None
     latest_commit: str | None
@@ -5085,6 +5086,7 @@ async def api_update_check() -> (
         mode=mode,
         current_version=current,
         update_available=False,
+        is_prerelease=False,
         latest_version=current,
         commits_behind=None,
         latest_commit=None,
@@ -5112,6 +5114,12 @@ async def api_update_check() -> (
                 else "latest"
             )
             result["current_version"] = running_tag
+
+            # Detect if running tag is a pre-release
+            is_prerelease = bool(
+                re.search(r"-(rc|alpha|beta|dev)\d*$", running_tag),
+            )
+            result["is_prerelease"] = is_prerelease
 
             # Query Docker Hub API for the latest stable tag (no pre-releases)
             hub_url = (
@@ -5141,8 +5149,12 @@ async def api_update_check() -> (
                     return tuple(int(x) for x in re.findall(r"\d+", v))
 
                 try:
-                    if _parse_ver(latest_stable) > _parse_ver(running_tag):
+                    current_parsed = _parse_ver(running_tag)
+                    latest_parsed = _parse_ver(latest_stable)
+                    if latest_parsed > current_parsed:
                         result["update_available"] = True
+                    # If is_prerelease and ahead of stable:
+                    # update_available stays False
                 except Exception:
                     result["update_available"] = latest_stable != running_tag
         else:

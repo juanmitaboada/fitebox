@@ -1554,6 +1554,13 @@
                 }
                 status.innerHTML = '<span style="color:var(--green)">' + msg + '</span>';
                 startBtn.style.display = '';
+            } else if (res.is_prerelease) {
+                const stableVer = res.latest_version || '—';
+                status.innerHTML =
+                    '<span style="background:var(--yellow-dim);color:var(--yellow);border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;">pre-release</span>' +
+                    ' <span style="color:var(--text-dim)">&middot; stable: ' + stableVer + '</span>' +
+                    ' <span style="color:var(--green)">&#10003; ahead of stable</span>';
+                document.getElementById('update-latest').style.display = 'none';
             } else {
                 status.innerHTML = '<span style="color:var(--green)">&#10003; System is up to date</span>';
                 document.getElementById('update-latest').style.display = 'none';
@@ -1820,6 +1827,12 @@
                 }
                 document.getElementById('update-status').innerHTML = '<span style="color:var(--green)">' + msg + '</span>';
                 document.getElementById('update-start-btn').style.display = '';
+            } else if (res.is_prerelease) {
+                const stableVer = res.latest_version || '—';
+                document.getElementById('update-status').innerHTML =
+                    '<span style="background:var(--yellow-dim);color:var(--yellow);border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;">pre-release</span>' +
+                    ' <span style="color:var(--text-dim)">&middot; stable: ' + stableVer + '</span>' +
+                    ' <span style="color:var(--green)">&#10003; ahead of stable</span>';
             } else {
                 document.getElementById('update-status').innerHTML = '<span style="color:var(--green)">&#10003; Up to date</span>';
             }
