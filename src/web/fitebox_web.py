@@ -97,6 +97,37 @@ _SECURITY_DEFAULTS: dict[str, bool] = {
 logger = logging.getLogger(__name__)
 
 DOCKER_IMAGE_REPO = "br0th3r/fitebox"
+BOOT_JSON = Path("/fitebox/data/boot.json")
+
+
+def _read_boot_json() -> dict[str, Any]:
+    """Read boot.json safely. Returns {} if missing, empty or corrupt."""
+    try:
+        text = BOOT_JSON.read_text(encoding="utf-8").strip()
+        if text:
+            return json.loads(text)
+    except Exception:
+        pass
+    return {}
+
+
+def _write_boot_json(
+    updates: dict[str, Any],
+    remove_keys: list[str] | None = None,
+) -> None:
+    """
+    Merge updates into boot.json preserving unrelated keys.
+    Keys in remove_keys are deleted from the result.
+    """
+    data = _read_boot_json()
+    data.update(updates)
+    for key in remove_keys or []:
+        data.pop(key, None)
+    try:
+        BOOT_JSON.write_text(json.dumps(data), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not write boot.json: {e}")
+
 
 # Pull state: tracks active background pulls
 _pull_state: dict[str, Any] = {
@@ -1596,7 +1627,7 @@ async def api_network_adhoc() -> dict[str, Any]:
 async def api_network_scan() -> NetworkScanResponse:
     """Scan for WiFi networks using nmcli directly."""
 
-    def _scan():
+    def _scan() -> list[WifiNetwork]:
         # Trigger rescan (may take a couple seconds)
         _net_cmd(["nmcli", "dev", "wifi", "rescan"], timeout=10)
         # List available networks
@@ -5270,6 +5301,23 @@ async def api_system_shutdown() -> dict[str, Any]:
     return result
 
 
+# === BOOT NOTIFICATIONS ===
+
+
+@app.get("/api/system/boot-error", dependencies=[Depends(verify_auth)])
+async def api_boot_error_get() -> dict[str, Any]:
+    """Return boot_error from boot.json if present."""
+    data = _read_boot_json()
+    return {"boot_error": data.get("boot_error") or None}
+
+
+@app.delete("/api/system/boot-error", dependencies=[Depends(verify_auth)])
+async def api_boot_error_delete() -> dict[str, Any]:
+    """Clear boot_error from boot.json (user has acknowledged it)."""
+    _write_boot_json({}, remove_keys=["boot_error"])
+    return {"status": "ok"}
+
+
 # === IMAGE MANAGEMENT ===
 
 
@@ -5978,13 +6026,18 @@ async def _get_compose_project_name() -> str:
     return out.decode().strip() or "fitebox"
 
 
-async def _restart_via_sidecar() -> None:
+async def _restart_via_sidecar(
+    old_tag_to_cleanup: str | None = None,
+) -> None:
     """
     Spawn a sidecar container that restarts us.
 
     Processes inside a container die when Docker stops it,
     so we launch a separate container with docker socket
     that handles the force-recreate after we're gone.
+
+    If old_tag_to_cleanup is provided, write it to boot.json so
+    entrypoint.sh removes the old image safely on next boot.
     """
     host_dir = await _get_host_project_dir()
     if not host_dir:
@@ -5992,6 +6045,15 @@ async def _restart_via_sidecar() -> None:
 
     project = await _get_compose_project_name()
     log_file = f"{host_dir}/log/update_restart.log"
+
+    # Schedule old image removal via boot.json (host-mounted volume,
+    # survives container stop). entrypoint.sh reads and processes it on
+    # next boot — avoids the race of rmi-ing an image the sidecar runs from.
+    if old_tag_to_cleanup:
+        _write_boot_json({"cleanup_image": old_tag_to_cleanup})
+        logger.info(
+            f"Scheduled image cleanup on next boot: {old_tag_to_cleanup}",
+        )
 
     # Use the same image the running container was started with
     inspect_proc = await asyncio.create_subprocess_exec(
@@ -6024,13 +6086,8 @@ async def _restart_via_sidecar() -> None:
         running_image,
         "sh",
         "-c",
-        f"OLD=$(docker inspect fitebox-recorder --format '{{{{.Image}}}}' 2>/dev/null); "  # noqa: E501
-        f"OLD_TAG=$(docker inspect fitebox-recorder --format '{{{{.Config.Image}}}}' 2>/dev/null); "  # noqa: E501
         f"sleep 3 && docker compose -p {project} "
-        f"up -d --force-recreate --no-deps recorder >> {log_file} 2>&1 && "
-        f'if [ -n "$OLD" ] && echo "$OLD_TAG" | grep -qvE \'-(rc|alpha|beta|dev)[0-9]*$\'; then '  # noqa: E501
-        f'docker image rm "$OLD" >> {log_file} 2>&1 || true; '
-        f"fi",
+        f"up -d --force-recreate --no-deps recorder >> {log_file} 2>&1",
     )
     logger.info(
         f"Sidecar updater launched "
@@ -6107,11 +6164,31 @@ async def _resolve_latest_tag() -> str | None:
     return None
 
 
-async def _update_official() -> None:
+async def _update_official() -> None:  # pylint: disable=too-many-statements
     """Update from Docker Hub: pull + restart."""
     await _update_notify(5, "pulling", "Pulling latest image...")
 
     project = await _get_compose_project_name()
+
+    # Capture current running tag before any changes
+    cur_proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "inspect",
+        "fitebox-recorder",
+        "--format",
+        "{{.Config.Image}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    cur_out, _ = await cur_proc.communicate()
+    current_image_tag = cur_out.decode().strip()
+    current_tag = (
+        current_image_tag.split(":")[-1] if ":" in current_image_tag else ""
+    )
+    is_current_stable = bool(current_tag) and not re.search(
+        r"-(rc|alpha|beta|dev)\d*$",
+        current_tag,
+    )
 
     # Update docker-compose.yml to point to latest before pulling,
     # then resolve the concrete tag after pull to avoid running as 'latest'
@@ -6190,7 +6267,21 @@ async def _update_official() -> None:
         await _update_notify(85, "restarting", "Restarting container...")
     await asyncio.sleep(1)
     await _update_notify(95, "restarting", "Applying update...")
-    await _restart_via_sidecar()
+
+    # Schedule cleanup only if both old and new are stable releases
+    if resolved_tag:
+        is_new_stable = bool(resolved_tag) and not re.search(
+            r"-(rc|alpha|beta|dev)\d*$",
+            resolved_tag,
+        )
+    else:
+        is_new_stable = False
+    old_tag_to_cleanup = (
+        current_image_tag
+        if is_current_stable and is_new_stable and current_image_tag
+        else None
+    )
+    await _restart_via_sidecar(old_tag_to_cleanup=old_tag_to_cleanup)
 
 
 async def _update_local() -> None:

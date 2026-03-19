@@ -18,6 +18,18 @@
             Disconnected - retrying...
         </div>
 
+        <div id="boot-error-banner" style="display:none;position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9000;
+            background:var(--bg-card,#1e1e3a);border:1.5px solid var(--red,#e05);border-radius:8px;
+            padding:0.85rem 1.2rem;max-width:90vw;min-width:260px;box-shadow:0 4px 24px rgba(0,0,0,0.5);
+            display:none;flex-direction:column;gap:0.5rem;align-items:flex-start;">
+            <div style="display:flex;align-items:center;gap:0.5rem;width:100%;">
+                <span style="color:var(--red,#e05);font-size:1rem;">&#9888;</span>
+                <span style="color:var(--red,#e05);font-size:0.8rem;font-weight:500;font-family:var(--mono);flex:1;" id="boot-error-msg"></span>
+            </div>
+            <button onclick="dismissBootError()" style="align-self:flex-end;font-size:0.75rem;padding:3px 14px;
+                border-radius:4px;cursor:pointer;font-family:var(--mono);">Got it</button>
+        </div>
+
         <!-- Page Header (shared across all pages) -->
         <div class="page-header">
             <img src="/statics/logo_header.png" alt="FITEBOX" class="logo-small" id="header-logo">
@@ -318,6 +330,7 @@
                     openAbout();
                 });
             });
+            checkBootError();
         });
 
         function openAbout() {
@@ -326,6 +339,21 @@
 
         function closeAbout() {
             document.getElementById('about-modal').classList.add('hidden');
+        }
+
+        async function checkBootError() {
+            try {
+                const res = await FITEBOX.get('/api/system/boot-error');
+                if (res && res.boot_error) {
+                    document.getElementById('boot-error-msg').textContent = res.boot_error;
+                    document.getElementById('boot-error-banner').style.display = 'flex';
+                }
+            } catch (e) {}
+        }
+
+        async function dismissBootError() {
+            try { await FITEBOX.api('DELETE', '/api/system/boot-error'); } catch (e) {}
+            document.getElementById('boot-error-banner').style.display = 'none';
         }
 
         document.addEventListener('keydown', (e) => {

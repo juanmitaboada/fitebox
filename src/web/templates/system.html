@@ -1556,8 +1556,9 @@
                 startBtn.style.display = '';
             } else if (res.is_prerelease) {
                 const stableVer = res.latest_version || '—';
+                const preTag = (res.current_version.match(/-(rc\d*|alpha\d*|beta\d*|dev\d*)$/) || [])[1] || 'pre-release';
                 status.innerHTML =
-                    '<span style="background:var(--yellow-dim);color:var(--yellow);border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;">pre-release</span>' +
+                    '<span style="background:var(--yellow-dim);color:var(--yellow);border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;">' + preTag + '</span>' +
                     ' <span style="color:var(--text-dim)">&middot; stable: ' + stableVer + '</span>' +
                     ' <span style="color:var(--green)">&#10003; ahead of stable</span>';
                 document.getElementById('update-latest').style.display = 'none';
@@ -1829,8 +1830,9 @@
                 document.getElementById('update-start-btn').style.display = '';
             } else if (res.is_prerelease) {
                 const stableVer = res.latest_version || '—';
+                const preTag = (res.current_version.match(/-(rc\d*|alpha\d*|beta\d*|dev\d*)$/) || [])[1] || 'pre-release';
                 document.getElementById('update-status').innerHTML =
-                    '<span style="background:var(--yellow-dim);color:var(--yellow);border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;">pre-release</span>' +
+                    '<span style="background:var(--yellow-dim);color:var(--yellow);border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;">' + preTag + '</span>' +
                     ' <span style="color:var(--text-dim)">&middot; stable: ' + stableVer + '</span>' +
                     ' <span style="color:var(--green)">&#10003; ahead of stable</span>';
             } else {
@@ -1928,6 +1930,7 @@
     function waitForServer() {
         const status = document.getElementById('restart-status');
         let attempts = 0;
+        let okStreak = 0;
 
         function poll() {
             attempts++;
@@ -1936,13 +1939,19 @@
             fetch('/', { signal: AbortSignal.timeout(3000) })
                 .then(r => {
                     if (r.ok) {
-                        if (status) status.textContent = 'Server is back! Reloading...';
-                        setTimeout(() => location.reload(), 1000);
+                        okStreak++;
+                        if (okStreak >= 3) {
+                            if (status) status.textContent = 'Server is back! Reloading...';
+                            setTimeout(() => location.reload(), 500);
+                        } else {
+                            setTimeout(poll, 1000);
+                        }
                     } else {
+                        okStreak = 0;
                         setTimeout(poll, 2000);
                     }
                 })
-                .catch(() => setTimeout(poll, 2000));
+                .catch(() => { okStreak = 0; setTimeout(poll, 2000); });
 
         }
 
