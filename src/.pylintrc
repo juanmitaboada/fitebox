@@ -325,8 +325,8 @@ indent-after-paren=4
 # tab).
 indent-string='    '
 
-# Maximum number of characters on a single line. (Juanmi: it was 100 I changed to 80)
-max-line-length=80
+# Maximum number of characters on a single line.
+max-line-length=100
 
 # Maximum number of lines in a module.
 max-module-lines=5000

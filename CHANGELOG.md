@@ -4,6 +4,26 @@ All notable changes to the FITEBOX project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.4] - 2026-06-23
+
+### Added
+
+- **Video detection module** (`src/detect_video.sh`): robustly resolves which `/dev/videoN` is the HDMI capture card vs the webcam, by USB ID then name, skipping UVC metadata nodes. Replaces the blind `/dev/video0` fallback that could steal the webcam node when no HDMI capture was present.
+
+### Fixed
+
+- **USB mic detection**: cheap USB-C audio dongles (TTGK `3302:00d1`, KM_B2 `001f:1601`) are now identified by USB ID instead of fragile ALSA name matching — the old `usb.*audio` pattern missed names like "KM_B2 Digital Audio at usb-…".
+- **Capture capability check**: `card_has_capture` now trusts `arecord -l` (what can actually be captured) instead of the `/proc/asound` PCM node, so a card that registers without a usable capture stream is correctly skipped and a working mic is selected instead.
+- **Silent recordings from USB dongles**: `force_unmute` now enables the ALSA capture switch (`set Capture cap` / `set Mic cap`). Many dongles boot with the capture toggle off, so the engine opened the device but recorded silence even with volume up and unmuted.
+- **Audio lost after USB re-enumeration**: the container kept a stale device mapping (static `devices:` block resolved nodes at startup). It now live-mounts `/dev`, so cards that disconnect/reconnect stay visible without a restart.
+- **Lint**: shellcheck `SC2181`/`SC2064`/`SC1091` in `recording_engine.sh`; pylint `C0103` (module-private globals via `good-names-rgxs`) and `W1404` (implicit string concat) in the web app.
+
+### Changed
+
+- All audio/video detection scripts and recording-engine comments translated to English (project convention).
+- **docker-compose**: `/dev:/dev` live mount replaces the static `devices:` + `device_cgroup_rules` blocks.
+- **README §5.4**: `make setup` is now mandatory before the first `make up` (it generates the TLS cert the proxy needs); fixed a broken section anchor.
+
 ## [1.2] - 2026-03-10
 
 ### Added

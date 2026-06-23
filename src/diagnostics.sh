@@ -58,10 +58,14 @@ detect_app_path() {
 }
 
 # === MAIN DIAGNOSTIC ===
-{
+# Detect environment BEFORE the "{ ... } | tee" block below: the pipe runs the
+# block in a subshell, so assignments made inside it would be lost afterwards
+# (e.g. the container hint at the end of the script reads ENV_TYPE).
 ENV_TYPE=$(detect_environment)
 REC_PATH=$(detect_recording_path)
 APP_PATH=$(detect_app_path)
+
+{
 
 echo "========================================="
 echo "  FITEBOX DIAGNOSTIC REPORT"
@@ -132,7 +136,7 @@ if [ "$ENV_TYPE" = "container" ]; then
     echo "Privileged mode: $([ -c /dev/mem ] && echo "YES" || echo "NO")"
 
     echo "Mounted /dev devices:"
-    ls -la /dev/ 2>/dev/null | grep -E "video|snd|i2c|gpio" | head -10 || echo "Limited /dev access"
+    ls -ld /dev/video* /dev/i2c* /dev/gpiochip* /dev/snd 2>/dev/null || echo "Limited /dev access"
     echo ""
 fi
 
@@ -158,18 +162,32 @@ echo "--- VIDEO DEVICES ---"
 if cmd_exists v4l2-ctl; then
     if v4l2-ctl --list-devices 2>/dev/null; then
         echo ""
-        if [ -e /dev/video0 ]; then
-            echo "Video0 capabilities:"
-            v4l2-ctl -d /dev/video0 --all 2>/dev/null | head -30
-            echo ""
-            echo "Video0 formats:"
-            v4l2-ctl -d /dev/video0 --list-formats-ext 2>/dev/null | head -20
-        fi
+        VDEVS=()
+        mapfile -t VDEVS < <(printf '%s\n' /dev/video* 2>/dev/null | sort -V)
+        for VDEV in "${VDEVS[@]}"; do
+            [ -e "$VDEV" ] || continue
+            # Video-capture nodes only (skip metadata/output)
+            if v4l2-ctl -d "$VDEV" --all 2>/dev/null | grep -qw "Video Capture"; then
+                echo "$VDEV capabilities:"
+                v4l2-ctl -d "$VDEV" --all 2>/dev/null | head -30
+                echo ""
+                echo "$VDEV formats:"
+                v4l2-ctl -d "$VDEV" --list-formats-ext 2>/dev/null | head -20
+                echo ""
+            fi
+        done
     else
         echo "v4l2-ctl failed (check /dev/video* access)"
     fi
 else
     echo "v4l2-ctl not available (install: apt-get install v4l-utils)"
+fi
+
+# Role resolution (same module the recording engine uses)
+if [ -f "${FITEBOX_VIDEO_DETECTION:-/app/detect_video.sh}" ]; then
+    echo "Role detection (detect_video.sh):"
+    "${FITEBOX_VIDEO_DETECTION:-/app/detect_video.sh}" 2>/dev/null | grep -E "HDMI capture|Webcam"
+    echo ""
 fi
 
 echo "Video devices in /dev:"
@@ -243,19 +261,19 @@ echo ""
 # === PROCESSES ===
 echo "--- FITEBOX PROCESSES ---"
 echo "FFmpeg:"
-ps aux | grep -E "ffmpeg|recording_engine" | grep -v grep || echo "Not running"
+pgrep -af "ffmpeg|recording_engine" || echo "Not running"
 echo ""
 echo "Lifecycle:"
-ps aux | grep lifecycle | grep -v grep || echo "Not running"
+pgrep -af lifecycle || echo "Not running"
 echo ""
 echo "OLED Controller:"
-ps aux | grep oled_controller | grep -v grep || echo "Not running"
+pgrep -af oled_controller || echo "Not running"
 echo ""
 echo "Buttons Controller:"
-ps aux | grep buttons_controller | grep -v grep || echo "Not running"
+pgrep -af buttons_controller || echo "Not running"
 echo ""
 echo "Monitor:"
-ps aux | grep -E "monitor_display|monitor.py|monitor_console" | grep -v grep || echo "Not running"
+pgrep -af "monitor_display|monitor.py|monitor_console" || echo "Not running"
 echo ""
 
 # === SUPERVISOR ===
@@ -362,6 +380,8 @@ fi
 # === FILE PERMISSIONS ===
 echo "--- FILE PERMISSIONS ---"
 if [ -d "$APP_PATH" ]; then
+    # ls -la here is intentional: human-readable listing of known-safe names
+    # shellcheck disable=SC2012
     ls -la "$APP_PATH"/*.sh "$APP_PATH"/*.py 2>/dev/null | head -15 || echo "No scripts in $APP_PATH"
 else
     echo "App path not found"

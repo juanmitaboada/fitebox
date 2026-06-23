@@ -16,18 +16,6 @@ services:
         hard: 32768
     shm_size: '256m'
 
-    # Device access
-    devices:
-      - /dev/video0:/dev/video0  # Webcam
-      - /dev/video1:/dev/video1
-      - /dev/video2:/dev/video2  # HDMI capture
-      - /dev/video3:/dev/video3
-      - /dev/snd:/dev/snd        # Audio devices
-      - /dev/i2c-1:/dev/i2c-1    # OLED display
-      - /dev/gpiochip0:/dev/gpiochip0
-    device_cgroup_rules:
-      - 'c 81:* rmw'    # major 81 = video devices
-
     # Volume mounts
     volumes:
       # Core mounts
@@ -35,8 +23,14 @@ services:
       - ./config:/config
       - ./data:/fitebox/data
 
+      # All device nodes, live-mounted: survives USB re-enumeration so audio
+      # cards that disconnect/reconnect (or change card number) stay visible to
+      # the container without a restart. Replaces the static devices: block
+      # (which froze the node mapping at startup) and includes /dev/snd,
+      # /dev/video*, /dev/i2c-1, /dev/gpiochip0 and /dev/bus/usb.
+      - /dev:/dev
+
       # System access (for diagnostics)
-      - /dev/bus/usb:/dev/bus/usb:ro  # USB device info
       - /proc:/host/proc:ro            # System info
       - /sys:/host/sys:ro              # Hardware info
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket # DBUS

@@ -11,8 +11,10 @@
 
 # === LOAD ENVIRONMENT CONFIGURATION ===
 if [ -f "/app/fitebox_env.sh" ]; then
+    # shellcheck source=/dev/null
     source /app/fitebox_env.sh
 elif [ -f "src/fitebox_env.sh" ]; then
+    # shellcheck source=/dev/null
     source src/fitebox_env.sh
 else
     echo "❌ ERROR: fitebox_env.sh not found!"
@@ -35,7 +37,7 @@ STEOF
 RECORDING_STATE_FILE="${FITEBOX_RUN_DIR}/fitebox_recording_state.json"
 
 
-# Itialize
+# Initialize
 fitebox_screen "Initializing..."
 write_state "detecting"
 
@@ -112,6 +114,11 @@ force_unmute() {
     amixer -c "$CARD_ID" set Master 100% unmute >/dev/null 2>&1
     amixer -c "$CARD_ID" set PCM 100% unmute >/dev/null 2>&1
     amixer -c "$CARD_ID" set 'Digital In' 100% unmute >/dev/null 2>&1
+    # Enable the capture SWITCH (cswitch). Many USB dongles expose a separate
+    # capture toggle that boots in [off]: without this, ALSA opens the device
+    # but records silence even though volume is up and unmuted.
+    amixer -c "$CARD_ID" set Capture cap >/dev/null 2>&1
+    amixer -c "$CARD_ID" set Mic cap >/dev/null 2>&1
 }
 
 test_audio_device() {
@@ -146,9 +153,8 @@ test_audio_device() {
 fitebox_lognscreen "INFO" "Detecting hardware..." | tee -a "$FITEBOX_LOG_FFMPEG"
 
 # --- AUDIO DETECTION (using module) ---
-source "$FITEBOX_AUDIO_DETECTION"
-
-if [ $? -ne 0 ]; then
+# shellcheck source=/dev/null
+if ! source "$FITEBOX_AUDIO_DETECTION"; then
     fitebox_lognscreen "ERROR" "Audio detection failed!" | tee -a "$FITEBOX_LOG_FFMPEG"
     exit 1
 fi
@@ -175,12 +181,18 @@ if [ ! -z "$HDMI_CARD_ID" ] && [ "$HDMI_CARD_ID" != "$VOICE_CARD_ID" ]; then
     fi
 fi
 
-# --- VIDEO DETECTION ---
+# --- VIDEO DETECTION (module) ---
 
-DEV_HDMI_VID=$(get_video "Hagibis" "MS2109" "USB Video" "HDMI")
+# Robust detection of the HDMI-capture and webcam video nodes (by USB id / name,
+# skipping UVC metadata nodes). Falls back to the previous heuristic below if the
+# module finds nothing, so behaviour is unchanged when it is absent.
+if [ -n "$FITEBOX_VIDEO_DETECTION" ] && [ -f "$FITEBOX_VIDEO_DETECTION" ]; then
+    # shellcheck source=/dev/null
+    source "$FITEBOX_VIDEO_DETECTION"
+fi
+
 [ -z "$DEV_HDMI_VID" ] && DEV_HDMI_VID="/dev/video0"
 
-DEV_CAM_VID=$(get_video "Webcam" "C920" "Angetube" "USB Camera")
 if [ "$DEV_CAM_VID" == "$DEV_HDMI_VID" ] || [ -z "$DEV_CAM_VID" ]; then
     if [ "$DEV_HDMI_VID" == "/dev/video0" ]; then
         DEV_CAM_VID="/dev/video2"
@@ -263,7 +275,7 @@ FFMPEG_VIDEO_INPUTS="-loop 1 -framerate 30 -i \"$FITEBOX_BACKGROUND_IMAGE\" \
   -thread_queue_size 8192 -f v4l2 -input_format mjpeg \
   -video_size 640x480 -framerate 30 -i \"$DEV_CAM_VID\""
 
-# Audio inputs (dinamics)
+# Audio inputs (dynamic)
 FFMPEG_AUDIO_INPUTS="-thread_queue_size 8192 -f alsa -ar 48000 -ac 2 -i \"$VOICE_DEV\""
 
 if [ ! -z "$HDMI_DEV" ] && [ "$HDMI_DEV" != "$VOICE_DEV" ]; then
@@ -284,7 +296,7 @@ DRAWTEXT_TITLE=""
 
 if [ -n "$REC_AUTHOR" ] || [ -n "$REC_TITLE" ]; then
     OVERLAY_DIR=$(mktemp -d)
-    trap "rm -rf $OVERLAY_DIR; cleanup_state" EXIT
+    trap 'rm -rf "$OVERLAY_DIR"; cleanup_state' EXIT
 
     # Author - small text centered under webcam, wrapped to 2 lines
     # Webcam is 330px wide at x=12, so text must fit within 330px
@@ -320,7 +332,7 @@ print(chr(10).join(lines))
     fi
 fi
 
-# Video filter (siempre el mismo)
+# Video filter (always the same)
 VIDEO_FILTER="[0:v]scale=1920:1080,format=yuv420p[bg]; \
     [1:v]setpts=PTS-STARTPTS,scale=1520:-1,format=yuv420p[v_hdmi]; \
     [2:v]setpts=PTS-STARTPTS,scale=330:-1,format=yuv420p[v_cam]; \

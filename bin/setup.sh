@@ -22,7 +22,8 @@ echo "---------------------------------------------------"
 # === 1. Update System & Core Dependencies ===
 echo "[1/10] Updating system and installing base tools..."
 apt update && apt upgrade -y
-apt install -y curl wget git build-essential v4l-utils alsa-utils bc jq
+# i2c-tools is needed for i2cdetect (OLED detection / diagnostics)
+apt install -y curl wget git build-essential v4l-utils alsa-utils bc jq i2c-tools
 
 # === 2. Docker Installation ===
 if ! [ -x "$(command -v docker)" ]; then
@@ -72,26 +73,65 @@ $REAL_USER soft nproc 32768
 $REAL_USER hard nproc 32768
 EOF
 
-# Cgroups (Docker memory management)
+# --- Kernel command line (cmdline.txt) -------------------------------------
+# cmdline.txt MUST stay a SINGLE line, and we must NEVER touch root=/PARTUUID
+# (it is unique to each SD card / SSD). We only append keys that are missing,
+# so re-running this script is safe and never duplicates parameters.
 CMDLINE_PATH="/boot/firmware/cmdline.txt"
 [ ! -f "$CMDLINE_PATH" ] && CMDLINE_PATH="/boot/cmdline.txt"
-if ! grep -q "cgroup_enable=memory" "$CMDLINE_PATH"; then
-    sed -i '1s/$/ cgroup_enable=cpuset cgroup_enable=memory cgroup_memory=1/' "$CMDLINE_PATH"
-    echo "Cgroups parameters added to $CMDLINE_PATH"
-else
-    echo "Cgroups already enabled. Skipping..."
-fi
 
-# === 5. RPi 5 Specifics (PCIe Gen 3 & Boot Mode) ===
+# add_cmdline_param <grep-guard> <string-to-append-if-guard-not-found>
+add_cmdline_param() {
+    if ! grep -q -- "$1" "$CMDLINE_PATH"; then
+        sed -i "1s|\$| $2|" "$CMDLINE_PATH"
+        echo "   cmdline.txt += $2"
+    else
+        echo "   cmdline.txt already has '$1', skipping."
+    fi
+}
+
+# Cgroups: Docker needs memory cgroups to enforce per-container limits
+add_cmdline_param "cgroup_enable=memory" "cgroup_enable=cpuset cgroup_enable=memory cgroup_memory=1"
+# Pin HDMI output to 1080p60: the display daemon owns the HDMI port for status
+# screens; without a fixed mode the resolution is auto-negotiated (may be wrong/blank)
+add_cmdline_param "video=" "video=HDMI-A-1:1920x1080M@60"
+# Hide the kernel boot logos (clean appliance splash)
+add_cmdline_param "logo.nologo" "logo.nologo"
+# Disable the blinking text cursor on the console
+add_cmdline_param "vt.global_cursor_default" "vt.global_cursor_default=0"
+
+# === 5. Hardware Interfaces & RPi 5 Specifics ===
 MODEL=$(cat /proc/device-tree/model)
-echo "[5/10] Configuring $MODEL hardware..."
+echo "[5/10] Configuring hardware interfaces for $MODEL..."
+
+# Enable I2C for the SSD1306 OLED (address 0x3c). do_i2c 0 = ENABLE.
+# Previously this had to be done by hand via raspi-config (README 5.2).
+raspi-config nonint do_i2c 0 || true
 
 # Boot to Console (login required - no autologin for security)
-raspi-config nonint do_boot_behaviour B1
+raspi-config nonint do_boot_behaviour B1 || true
+
+CONFIG_TXT="/boot/firmware/config.txt"
+[ ! -f "$CONFIG_TXT" ] && CONFIG_TXT="/boot/config.txt"
 
 if [[ "$MODEL" == *"Raspberry Pi 5"* ]]; then
-    if ! grep -q "dtparam=pciex1_gen=3" /boot/firmware/config.txt; then
-        echo "dtparam=pciex1_gen=3" >> /boot/firmware/config.txt
+    # PCIe Gen 3 for faster NVMe SSD throughput
+    if ! grep -q "^dtparam=pciex1_gen=3" "$CONFIG_TXT"; then
+        echo "dtparam=pciex1_gen=3" >> "$CONFIG_TXT"
+        echo "   config.txt += dtparam=pciex1_gen=3"
+    fi
+
+    # Force the 4K page-size kernel for software compatibility.
+    # The Pi 5 boots kernel_2712.img (16K pages) by default; some components in
+    # the FFmpeg / V4L2 capture / Python stack misbehave under 16K pages.
+    # kernel8.img is the generic ARM64 kernel and uses 4K pages.
+    # The trailing [all] header guarantees the directive applies to every model
+    # regardless of the preceding section, and as it is the last thing in the
+    # file it does not alter the context of anything else.
+    # Verify after reboot with: getconf PAGESIZE  (4096 = OK, 16384 = wrong)
+    if ! grep -q "^kernel=kernel8.img" "$CONFIG_TXT"; then
+        printf '\n# FITEBOX: force 4K page-size kernel for software compatibility\n[all]\nkernel=kernel8.img\n' >> "$CONFIG_TXT"
+        echo "   config.txt += kernel=kernel8.img (4K page size)"
     fi
 fi
 
@@ -124,17 +164,17 @@ $REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/plymouth display-message *
 EOF
 chmod 440 /etc/sudoers.d/010_fitebox-permissions
 
-# Add to i2c if needed for future OLED
+# Add to i2c group so the user can talk to the OLED bus without root
 getent group i2c >/dev/null && usermod -aG i2c "$REAL_USER" || true
 
 # === 8. File System Structure ===
 echo "[8/10] Creating recording directories..."
 mkdir -p ./recordings ./log ./run
 chown -R "$REAL_USER:$REAL_USER" ./recordings ./log ./run
-sudo chmod -R 2775 ./recordings ./log ./run
+chmod -R 2775 ./recordings ./log ./run
 
-# === 9. File System Structure ===
-echo "[9/11] 🔐 Generate self-signed certificates for Fitebox..."
+# === 9. TLS Certificates ===
+echo "[9/10] 🔐 Generating self-signed certificates for Fitebox..."
 
 # Make certs directory if it doesn't exist
 mkdir -p certs
@@ -185,8 +225,10 @@ echo "  - User: $REAL_USER (UID=$REAL_UID, GID=$REAL_GID)"
 echo "  - Docker configured to run as this user"
 echo "  - Recordings will be owned by '$REAL_USER'"
 echo "  - Audio services (PulseAudio/PipeWire) disabled"
+echo "  - I2C enabled (OLED), 4K page-size kernel forced (RPi 5)"
+echo "  - HDMI pinned to 1080p60, clean console (no logo/cursor)"
 echo "  - System optimizations applied"
 echo ""
-echo "  ⚠️  A reboot is REQUIRED to apply Kernel and PCIe changes."
+echo "  ⚠️  A reboot is REQUIRED to apply Kernel, PCIe and cmdline changes."
 echo "  🔥🔥🔥 PLEASE REBOOT!!! 🔥🔥🔥"
 echo "----------------------------------------------------"

@@ -183,7 +183,7 @@ good-names=i,
 
 # Good variable names regexes, separated by a comma. If names match any regex,
 # they will always be accepted
-good-names-rgxs=
+good-names-rgxs=^_[a-z][a-zA-Z0-9_]*$
 
 # Include a hint for the correct naming format with invalid-name.
 include-naming-hint=no
@@ -325,8 +325,8 @@ indent-after-paren=4
 # tab).
 indent-string='    '
 
-# Maximum number of characters on a single line. (Juanmi: it was 100 I changed to 80)
-max-line-length=80
+# Maximum number of characters on a single line.
+max-line-length=100
 
 # Maximum number of lines in a module.
 max-module-lines=5000

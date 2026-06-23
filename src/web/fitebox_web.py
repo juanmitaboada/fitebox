@@ -495,9 +495,10 @@ DIAG_COMMANDS = {
         "2>/dev/null || echo 'supervisor not running'"
     ),
     "video": (
+        "echo '--- Video Detection ---'; /app/detect_video.sh 2>&1; echo '';"
         "echo '--- V4L2 Devices ---'; v4l2-ctl --list-devices 2>&1; echo '';"
         "echo '--- /dev/video ---'; ls -la /dev/video* 2>&1; echo '';"
-        "for d in /dev/video0 /dev/video2; do "
+        "for d in /dev/video*; do "
         '  echo "--- $d capabilities ---"; '
         "  v4l2-ctl -d $d --all 2>&1 | head -20; echo ''; "
         "done"
@@ -614,9 +615,7 @@ _health_log_path_cached: str = ""
 HEALTH_FILE = Path("/fitebox/run/fitebox_health.json")
 _META_WRITER_INTERVAL = 10  # seconds
 _meta_writer_task: asyncio.Task[None] | None = None
-_meta_current_file: str = (
-    ""  # track which recording we're writing metadata for
-)
+_meta_current_file: str = ""  # track which recording we're writing metadata for
 
 # --- On-demand Recording Thumbnail ---
 # Extracts a frame from the active recording every N seconds.
@@ -744,9 +743,7 @@ def _detect_system_info() -> dict[str, str]:
 
     # Python
     info["python_version"] = (
-        f"{sys.version_info.major}."
-        f"{sys.version_info.minor}."
-        f"{sys.version_info.micro}"
+        f"{sys.version_info.major}." f"{sys.version_info.minor}." f"{sys.version_info.micro}"
     )
 
     # FFmpeg
@@ -1023,17 +1020,11 @@ def _read_disk_io() -> DiskIOInfo:
         dt = now - _vitals_io_prev["ts"]
         if dt > 0:
             result["io_read_kbs"] = round(
-                (read_sectors - _vitals_io_prev["read_sectors"])
-                * 512
-                / 1024
-                / dt,
+                (read_sectors - _vitals_io_prev["read_sectors"]) * 512 / 1024 / dt,
                 1,
             )
             result["io_write_kbs"] = round(
-                (write_sectors - _vitals_io_prev["write_sectors"])
-                * 512
-                / 1024
-                / dt,
+                (write_sectors - _vitals_io_prev["write_sectors"]) * 512 / 1024 / dt,
                 1,
             )
     _vitals_io_prev = {
@@ -1082,8 +1073,7 @@ async def _scan_worst_bitrate() -> None:
             duration = float(out.decode().strip())
             if duration > 10:
                 bps = fsize / duration
-                if bps > worst:
-                    worst = bps
+                worst = max(worst, bps)
         except Exception:
             continue
 
@@ -1150,8 +1140,7 @@ def _calc_rec_remaining() -> RecRemainingInfo:
                                     if measured > 1000:
                                         result["rec_measured"] = True
                                         # Update worst case if current is worse
-                                        if measured > _worst_bitrate_bps:
-                                            _worst_bitrate_bps = measured
+                                        _worst_bitrate_bps = max(_worst_bitrate_bps, measured)
                                         bitrate = max(bitrate, measured)
             except Exception:
                 pass
@@ -1406,9 +1395,7 @@ def _get_mac(dev: str) -> str:
     return ""
 
 
-def _fetch_network_info_sync() -> (
-    NetInfo
-):  # pylint: disable=too-many-statements
+def _fetch_network_info_sync() -> NetInfo:  # pylint: disable=too-many-statements
     """Read full network state from OS. Runs in thread to avoid blocking."""
     wifi: WifiInfo = {
         "connected": False,
@@ -1514,11 +1501,7 @@ def _fetch_network_info_sync() -> (
                             parts = line.split()
                             if len(parts) >= 4:
                                 level = float(parts[3].rstrip("."))
-                                wifi["signal"] = (
-                                    int(level - 110)
-                                    if level > 0
-                                    else int(level)
-                                )
+                                wifi["signal"] = int(level - 110) if level > 0 else int(level)
             except Exception:
                 pass
             if not wifi["signal"]:
@@ -1562,10 +1545,7 @@ def _fetch_network_info_sync() -> (
 async def _read_network_info() -> NetInfo:
     """Read network info with short-TTL cache."""
     now = time.time()
-    if (
-        _net_info_cache["data"]
-        and (now - _net_info_cache["ts"]) < _NET_INFO_TTL
-    ):
+    if _net_info_cache["data"] and (now - _net_info_cache["ts"]) < _NET_INFO_TTL:
         return _net_info_cache["data"]
     data = await asyncio.to_thread(_fetch_network_info_sync)
     _net_info_cache["data"] = data
@@ -1592,20 +1572,10 @@ async def api_network_wifi_qr(key: str = "") -> Response:
 
     # WiFi QR standard: WIFI:T:WPA;S:ssid;P:password;;
     def _esc(s) -> str:
-        return (
-            s.replace("\\", "\\\\")
-            .replace(";", "\\;")
-            .replace(":", "\\:")
-            .replace(",", "\\,")
-        )
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(":", "\\:").replace(",", "\\,")
 
     security = "WPA" if wifi["password"] else "nopass"
-    wifi_str = (
-        "WIFI:"
-        f"T:{security};"
-        f"S:{_esc(wifi['ssid'])};"
-        f"P:{_esc(wifi['password'])};;"
-    )
+    wifi_str = "WIFI:" f"T:{security};" f"S:{_esc(wifi['ssid'])};" f"P:{_esc(wifi['password'])};;"
 
     img = qrcode.make(
         wifi_str,
@@ -2010,9 +1980,7 @@ async def _test_rtmp_connection(  # pylint: disable=too-many-statements,too-many
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        err_text = (
-            stderr.decode("utf-8", errors="replace")[-300:] if stderr else ""
-        )
+        err_text = stderr.decode("utf-8", errors="replace")[-300:] if stderr else ""
 
         if proc.returncode == 0:
             return True, ""
@@ -2134,8 +2102,7 @@ async def _stream_file_to_rtmp(
         _, stderr = await proc.communicate()
         if proc.returncode != 0 and stderr:
             logger.error(
-                "Streaming bumper error: "
-                f"{stderr.decode('utf-8', errors='replace')[-300:]}",
+                "Streaming bumper error: " f"{stderr.decode('utf-8', errors='replace')[-300:]}",
             )
     finally:
         if proc in _pipeline_procs:
@@ -2247,8 +2214,7 @@ async def _feed_recording_live(  # pylint: disable=too-many-statements,too-many-
         )
         _pipeline_procs.append(f)
         logger.info(
-            f"Live feeder started (PID {f.pid}"
-            f"{', seek=' + str(seek) + 's' if seek else ''})",
+            f"Live feeder started (PID {f.pid}" f"{', seek=' + str(seek) + 's' if seek else ''})",
         )
         return f
 
@@ -2307,8 +2273,7 @@ async def _feed_recording_live(  # pylint: disable=too-many-statements,too-many-
             elapsed = time.time() - stream_start
             seek_to = max(0, int(elapsed) - 10)  # 10s overlap
             logger.info(
-                f"EOF after ~{elapsed:.0f}s played, "
-                f"waiting 5s then restarting from {seek_to}s",
+                f"EOF after ~{elapsed:.0f}s played, " f"waiting 5s then restarting from {seek_to}s",
             )
 
             for _ in range(5):
@@ -2391,8 +2356,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
             pass
         if stale_file:
             logger.info(
-                f"Streaming: ignoring stale health file "
-                f"({Path(stale_file).name})",
+                f"Streaming: ignoring stale health file " f"({Path(stale_file).name})",
             )
 
         rec_file = ""
@@ -2408,11 +2372,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
                     pid = health.get("pid")
 
                     # Must be a DIFFERENT file from the stale one
-                    if (
-                        candidate
-                        and candidate != stale_file
-                        and Path(candidate).exists()
-                    ):
+                    if candidate and candidate != stale_file and Path(candidate).exists():
                         # Verify PID is actually alive
                         pid_alive = False
                         if pid:
@@ -2447,12 +2407,9 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
                 return
             await asyncio.sleep(1)
 
-        file_size = (
-            Path(rec_file).stat().st_size if Path(rec_file).exists() else 0
-        )
+        file_size = Path(rec_file).stat().st_size if Path(rec_file).exists() else 0
         logger.info(
-            f"Streaming: buffer ready ({file_size:,} bytes, "
-            f"{BUFFER_TOTAL_SECONDS}s elapsed)",
+            f"Streaming: buffer ready ({file_size:,} bytes, " f"{BUFFER_TOTAL_SECONDS}s elapsed)",
         )
 
         # === Start SINGLE output ffmpeg (one RTMP connection for everything)
@@ -2492,8 +2449,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
         )
         _pipeline_procs.append(output_proc)
         logger.info(
-            f"Streaming: output ffmpeg started "
-            f"(PID {output_proc.pid}) → {rtmp_url}",
+            f"Streaming: output ffmpeg started " f"(PID {output_proc.pid}) → {rtmp_url}",
         )
 
         # Cumulative timestamp offset for segment chaining
@@ -2503,8 +2459,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
         if BUMPER_INTRO_FILE.exists() and not _pipeline_stop_event.is_set():
             if output_proc.returncode is not None:
                 logger.error(
-                    f"Streaming: output ffmpeg died before intro "
-                    f"(rc={output_proc.returncode})",
+                    f"Streaming: output ffmpeg died before intro " f"(rc={output_proc.returncode})",
                 )
                 return
             _pipeline_phase = "intro"
@@ -2533,8 +2488,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
         # === Live recording ===
         if output_proc.returncode is not None:
             logger.error(
-                f"Streaming: output ffmpeg died before live "
-                f"(rc={output_proc.returncode})",
+                f"Streaming: output ffmpeg died before live " f"(rc={output_proc.returncode})",
             )
             return
         _pipeline_phase = "live"
@@ -2563,8 +2517,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
         if BUMPER_OUTRO_FILE.exists():
             if output_proc.returncode is not None:
                 logger.error(
-                    f"Streaming: output ffmpeg died before outro "
-                    f"(rc={output_proc.returncode})",
+                    f"Streaming: output ffmpeg died before outro " f"(rc={output_proc.returncode})",
                 )
                 return
             _pipeline_phase = "outro"
@@ -2581,11 +2534,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
         # === Close stdin → output ffmpeg flushes to RTMP → clean close ===
         _pipeline_phase = "closing"
         await _broadcast_streaming_state()
-        if (
-            output_proc
-            and output_proc.stdin
-            and not output_proc.stdin.is_closing()
-        ):
+        if output_proc and output_proc.stdin and not output_proc.stdin.is_closing():
             logger.info(
                 "Streaming: closing output pipe, waiting for RTMP flush...",
             )
@@ -2598,8 +2547,7 @@ async def _streaming_pipeline(  # pylint: disable=too-many-statements,too-many-r
             try:
                 await asyncio.wait_for(output_proc.wait(), timeout=30)
                 logger.info(
-                    f"Streaming: output ffmpeg exited "
-                    f"(rc={output_proc.returncode})",
+                    f"Streaming: output ffmpeg exited " f"(rc={output_proc.returncode})",
                 )
             except asyncio.TimeoutError:
                 logger.warning(
@@ -2693,9 +2641,7 @@ async def api_streaming_status() -> dict[str, Any]:
 
 
 @app.get("/api/streaming/progress", dependencies=[Depends(verify_auth)])
-async def api_streaming_progress() -> (
-    StreamingProgressResponse | StreamingProgressFullResponse
-):
+async def api_streaming_progress() -> StreamingProgressResponse | StreamingProgressFullResponse:
     """
     Streaming progress: file read position via /proc/PID/fdinfo.
     Tracks both recording MKV (during drain) and
@@ -2738,9 +2684,7 @@ async def api_streaming_progress() -> (
                     "draining": _pipeline_draining,
                     "position": pos,
                     "total": total,
-                    "percent": (
-                        round(pos / total * 100, 1) if total > 0 else 0
-                    ),
+                    "percent": (round(pos / total * 100, 1) if total > 0 else 0),
                     "remaining_mb": round((total - pos) / 1048576, 1),
                     "file": Path(link).name,
                 }
@@ -2802,9 +2746,7 @@ def _extract_bumper_thumbnail(video_path: Path) -> None:
             timeout=10,
             check=False,
         )
-        duration = (
-            float(probe.stdout.strip()) if probe.returncode == 0 else 5.0
-        )
+        duration = float(probe.stdout.strip()) if probe.returncode == 0 else 5.0
         seek = max(0, duration / 2)
 
         subprocess.run(
@@ -2906,14 +2848,10 @@ async def api_bumper_upload(  # pylint: disable=too-many-return-statements,too-m
         )
 
         v_info = (
-            json.loads(probe_r.stdout).get("streams", [{}])[0]
-            if probe_r.returncode == 0
-            else {}
+            json.loads(probe_r.stdout).get("streams", [{}])[0] if probe_r.returncode == 0 else {}
         )
         a_info = (
-            json.loads(probe_a.stdout).get("streams", [{}])[0]
-            if probe_a.returncode == 0
-            else {}
+            json.loads(probe_a.stdout).get("streams", [{}])[0] if probe_a.returncode == 0 else {}
         )
 
         src_w = int(v_info.get("width", 0))
@@ -2952,9 +2890,7 @@ async def api_bumper_upload(  # pylint: disable=too-many-return-statements,too-m
                 timeout=10,
                 check=False,
             )
-            src_profile = (
-                profile_r.stdout.strip().lower()
-            )  # e.g. "main", "high"
+            src_profile = profile_r.stdout.strip().lower()  # e.g. "main", "high"
         except Exception:
             pass
 
@@ -3002,9 +2938,7 @@ async def api_bumper_upload(  # pylint: disable=too-many-return-statements,too-m
                 "status": "ok",
                 "message": f"{which.title()} bumper updated",
                 "converted": False,
-                "source": f"{src_w}x{src_h} "
-                f"{src_fps}fps "
-                f"{src_codec}+{src_a_codec}",
+                "source": f"{src_w}x{src_h} " f"{src_fps}fps " f"{src_codec}+{src_a_codec}",
             }
 
         if not convert:
@@ -3245,10 +3179,7 @@ async def api_bumper_info(which: str, key: str = "") -> dict[str, Any]:
         "height": h,
         "fps": fps,
         "codec": v.get("codec_name", ""),
-        "matches": w == 1920
-        and h == 1080
-        and fps == 30
-        and v.get("codec_name") == "h264",
+        "matches": w == 1920 and h == 1080 and fps == 30 and v.get("codec_name") == "h264",
     }
 
 
@@ -3345,7 +3276,12 @@ async def api_system_diagnostic(request: Request) -> dict[str, Any]:
 
 def _parse_v4l2_devices(output: str) -> list[V4L2DeviceInfo]:
     """
-    Parse v4l2-ctl --list-devices output into structured list.
+    Parse v4l2-ctl --list-devices output into a structured list.
+
+    Takes the FIRST /dev/video node of each device block, which is the capture
+    node. UVC cameras expose extra metadata nodes right after it that must be
+    skipped (the old `num % 2 == 0` heuristic dropped capture nodes that landed
+    on odd numbers and could pick a metadata node instead).
     """
     devices: list[V4L2DeviceInfo] = []
     name = None
@@ -3356,28 +3292,44 @@ def _parse_v4l2_devices(output: str) -> list[V4L2DeviceInfo]:
         elif "/dev/video" in ls and name:
             dev = ls.split()[0]
             try:
-                num = int(dev.replace("/dev/video", ""))
+                int(dev.replace("/dev/video", ""))
             except ValueError:
                 continue
-            if num % 2 == 0:  # capture nodes only (even-numbered)
-                nl = name.lower()
-                if any(k in nl for k in ["macrosilicon", "hagibis", "hdmi"]):
-                    dtype, size = "hdmi", "1280x720"
-                elif any(k in nl for k in ["camera", "webcam", "angetube"]):
-                    dtype, size = "cam", "640x480"
-                else:
-                    dtype, size = "unknown", "640x480"
-                devices.append(
-                    {
-                        "dev": dev,
-                        "name": name,
-                        "type": dtype,
-                        "size": size,
-                        "audio_card": None,
-                        "audio_dev": None,
-                    },
-                )
-                name = None
+            nl = name.lower()
+            if any(k in nl for k in ["macrosilicon", "hagibis", "ms2109", "hdmi"]):
+                dtype, size = "hdmi", "1280x720"
+            elif any(
+                k in nl
+                for k in [
+                    "camera",
+                    "webcam",
+                    "uvc",
+                    "angetube",
+                    "c270",
+                    "c310",
+                    "c505",
+                    "c615",
+                    "c920",
+                    "c922",
+                    "c925",
+                    "c930",
+                    "brio",
+                ]
+            ):
+                dtype, size = "cam", "640x480"
+            else:
+                dtype, size = "unknown", "640x480"
+            devices.append(
+                {
+                    "dev": dev,
+                    "name": name,
+                    "type": dtype,
+                    "size": size,
+                    "audio_card": None,
+                    "audio_dev": None,
+                },
+            )
+            name = None  # only the first (capture) node per device block
     return devices
 
 
@@ -3433,6 +3385,36 @@ async def _detect_all_devices() -> DetectedDevices:
     v_out, _ = await asyncio.wait_for(vproc.communicate(), timeout=10)
     video = _parse_v4l2_devices(v_out.decode(errors="replace"))
 
+    # Authoritative device roles from the shared bash module (the same source of
+    # truth the recording engine uses), so the preview shows exactly the devices
+    # that will be recorded. Falls back to the name-based types above on failure.
+    try:
+        vidproc = await asyncio.create_subprocess_exec(
+            "bash",
+            "-c",
+            ". /app/fitebox_env.sh 2>/dev/null; "
+            ". /app/detect_video.sh 2>/dev/null; "
+            'echo "DEV_HDMI_VID=$DEV_HDMI_VID"; '
+            'echo "DEV_CAM_VID=$DEV_CAM_VID"',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        vid_out, _ = await asyncio.wait_for(vidproc.communicate(), timeout=15)
+        roles: dict[str, str] = {}
+        for line in vid_out.decode(errors="replace").strip().split("\n"):
+            if "=" in line:
+                k, _, v = line.partition("=")
+                roles[k] = v
+        hdmi_dev = roles.get("DEV_HDMI_VID", "")
+        cam_dev = roles.get("DEV_CAM_VID", "")
+        for vd in video:
+            if hdmi_dev and vd["dev"] == hdmi_dev:
+                vd["type"] = "hdmi"
+            elif cam_dev and vd["dev"] == cam_dev:
+                vd["type"] = "cam"
+    except (asyncio.TimeoutError, OSError) as exc:
+        logger.warning("detect_video.sh role overlay failed: %s", exc)
+
     aproc = await asyncio.create_subprocess_exec(
         "bash",
         "-c",
@@ -3465,17 +3447,9 @@ async def _detect_all_devices() -> DetectedDevices:
 
     # Cross-reference: map each video device to its audio card by name overlap
     for vd in video:
-        vwords = {
-            w.lower()
-            for w in vd["name"].replace(":", " ").split()
-            if len(w) > 3
-        }
+        vwords = {w.lower() for w in vd["name"].replace(":", " ").split() if len(w) > 3}
         for ac in audio:
-            awords = {
-                w.lower()
-                for w in ac["name"].replace(":", " ").split()
-                if len(w) > 3
-            }
+            awords = {w.lower() for w in ac["name"].replace(":", " ").split() if len(w) > 3}
             if vwords & awords:  # any shared keyword > 3 chars
                 vd["audio_card"] = ac["id"]
                 vd["audio_dev"] = ac["dev"]
@@ -3539,11 +3513,7 @@ async def _mjpeg_generator(
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n"
-                    b"Content-Length: "
-                    + str(len(frame)).encode()
-                    + b"\r\n\r\n"
-                    + frame
-                    + b"\r\n"
+                    b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
                 )
     except asyncio.CancelledError:
         pass
@@ -3734,10 +3704,7 @@ def _parse_ffmpeg_log() -> list[HealthSample]:
     except Exception:
         return _health_cached_samples
 
-    if (
-        log_path_str != _health_log_path_cached
-        or file_size < _health_log_offset
-    ):
+    if log_path_str != _health_log_path_cached or file_size < _health_log_offset:
         # New file or file was truncated - reset
         _health_log_offset = 0
         _health_cached_samples = []
@@ -3758,9 +3725,7 @@ def _parse_ffmpeg_log() -> list[HealthSample]:
     if not new_data:
         return _health_cached_samples
 
-    prev_frame = (
-        _health_cached_samples[-1]["frame"] if _health_cached_samples else -1
-    )
+    prev_frame = _health_cached_samples[-1]["frame"] if _health_cached_samples else -1
 
     for chunk in re.split(r"[\r\n]+", new_data):
         m = _PROGRESS_RE.search(chunk)
@@ -4162,9 +4127,7 @@ async def _metadata_writer_loop() -> None:
                                 os.kill(pid, 0)
                             except OSError:
                                 health = {}  # stale
-                        mkv_path = (
-                            health.get("output_file", "") if health else ""
-                        )
+                        mkv_path = health.get("output_file", "") if health else ""
             except Exception:
                 pass
 
@@ -4323,16 +4286,11 @@ async def _extract_preview_clip() -> (
         await asyncio.wait_for(extract.wait(), timeout=10)
         SANDWICH_PATH.unlink(missing_ok=True)
 
-        if (
-            not PREVIEW_CLIP_PATH.exists()
-            or PREVIEW_CLIP_PATH.stat().st_size < 1000
-        ):
+        if not PREVIEW_CLIP_PATH.exists() or PREVIEW_CLIP_PATH.stat().st_size < 1000:
             if extract.stderr is None:
                 err = "Unknown error"
             else:
-                err = (await extract.stderr.read()).decode(errors="replace")[
-                    :200
-                ]
+                err = (await extract.stderr.read()).decode(errors="replace")[:200]
             return {
                 "status": "error",
                 "message": f"Clip extraction failed: {err}",
@@ -4358,9 +4316,7 @@ async def api_recording_preview() -> dict[str, Any]:
     global _last_preview_ts  # pylint: disable=global-statement
 
     now = time.monotonic()
-    if (
-        now - _last_preview_ts
-    ) < PREVIEW_REFRESH_INTERVAL and PREVIEW_CLIP_PATH.exists():
+    if (now - _last_preview_ts) < PREVIEW_REFRESH_INTERVAL and PREVIEW_CLIP_PATH.exists():
         return {"status": "ok", "cached": True}
 
     result = await _extract_preview_clip()
@@ -4397,10 +4353,7 @@ async def api_schedule_config() -> dict[str, Any]:
 
     config_path = "/fitebox/data/schedule_config.json"
     year = datetime.now().year
-    default_url = (
-        "https://www.opensouthcode.org/conferences/"
-        f"opensouthcode{year}/schedule.xml"
-    )
+    default_url = "https://www.opensouthcode.org/conferences/" f"opensouthcode{year}/schedule.xml"
 
     try:
         with open(config_path, encoding="utf-8") as f:
@@ -4552,9 +4505,7 @@ def _parse_event(event_el, date_str, room):
         author = ""
         persons_el = event_el.find("persons")
         if persons_el is not None:
-            names = [
-                p.text.strip() for p in persons_el.findall("person") if p.text
-            ]
+            names = [p.text.strip() for p in persons_el.findall("person") if p.text]
             author = ", ".join(names)
 
         title = get_text("title")
@@ -4607,8 +4558,7 @@ async def api_recordings_list() -> dict[str, Any]:
                 entry["devices"] = meta.get("devices", {})
             # Created = recording_started from meta, fallback to file mtime
             entry["created"] = (
-                entry.get("recording_started")
-                or datetime.fromtimestamp(stat.st_mtime).isoformat()
+                entry.get("recording_started") or datetime.fromtimestamp(stat.st_mtime).isoformat()
             )
             recordings.append(entry)
 
@@ -4616,8 +4566,7 @@ async def api_recordings_list() -> dict[str, Any]:
     recordings.sort(key=lambda r: str(r.get("created", "")), reverse=True)
     return {
         "recordings": recordings,
-        "bumpers_available": BUMPER_INTRO_FILE.exists()
-        and BUMPER_OUTRO_FILE.exists(),
+        "bumpers_available": BUMPER_INTRO_FILE.exists() and BUMPER_OUTRO_FILE.exists(),
     }
 
 
@@ -4736,8 +4685,7 @@ def _concat_bumpers_sync(  # pylint: disable=too-many-return-statements,too-many
                 }
             elif av_delta > 0.5:
                 logger.warning(
-                    f"Recording AV delta {av_delta:.1f}s - "
-                    "proceeding with caution",
+                    f"Recording AV delta {av_delta:.1f}s - " "proceeding with caution",
                 )
 
         intro_dur = _probe_duration(intro, "v") or 0
@@ -4809,8 +4757,7 @@ def _concat_bumpers_sync(  # pylint: disable=too-many-return-statements,too-many
             if r.returncode != 0:
                 can_copy = False  # Fall through to filter_complex
                 logger.warning(
-                    "Remux failed, falling back to re-encode: "
-                    f"{r.stderr[-100:]}",
+                    "Remux failed, falling back to re-encode: " f"{r.stderr[-100:]}",
                 )
 
         if can_copy:
@@ -4840,8 +4787,7 @@ def _concat_bumpers_sync(  # pylint: disable=too-many-return-statements,too-many
             if r.returncode != 0:
                 can_copy = False  # Fall through to filter_complex
                 logger.warning(
-                    "Concat -c copy failed, falling back to re-encode: "
-                    f"{r.stderr[-100:]}",
+                    "Concat -c copy failed, falling back to re-encode: " f"{r.stderr[-100:]}",
                 )
 
         if not can_copy:
@@ -5084,9 +5030,7 @@ async def api_system_security_set(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/system/update/check", dependencies=[Depends(verify_auth)])
-async def api_update_check() -> (
-    UpdateResult
-):  # pylint: disable=too-many-statements
+async def api_update_check() -> UpdateResult:  # pylint: disable=too-many-statements
     """Check if an update is available."""
 
     # Determine build mode and current version
@@ -5139,11 +5083,7 @@ async def api_update_check() -> (
             inspect_out, _ = await inspect_proc.communicate()
             running_image = inspect_out.decode().strip()
             # Extract tag from "docker.io/br0th3r/fitebox:1.2" -> "1.2"
-            running_tag = (
-                running_image.split(":")[-1]
-                if ":" in running_image
-                else "latest"
-            )
+            running_tag = running_image.split(":")[-1] if ":" in running_image else "latest"
             result["current_version"] = running_tag
 
             # Detect if running tag is a pre-release
@@ -5168,8 +5108,7 @@ async def api_update_check() -> (
             tags = [
                 t["name"]
                 for t in hub_data.get("results", [])
-                if t["name"] != "latest"
-                and not re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"])
+                if t["name"] != "latest" and not re.search(r"-(rc|alpha|beta|dev)\d*$", t["name"])
             ]
 
             if tags:
@@ -5183,9 +5122,7 @@ async def api_update_check() -> (
                     #   "1.3-rc4" -> ((1,3), False, 4)
                     #   "1.3-rc1" -> ((1,3), False, 1)
                     pre = re.search(r"-(rc|alpha|beta|dev)(\d*)$", v)
-                    base = tuple(
-                        int(x) for x in re.findall(r"\d+", v.split("-")[0])
-                    )
+                    base = tuple(int(x) for x in re.findall(r"\d+", v.split("-")[0]))
                     if pre:
                         return (base, False, int(pre.group(2) or 0))
                     return (base, True, 0)
@@ -5212,9 +5149,7 @@ async def api_update_check() -> (
             )
             fetch_out, _ = await fetch_proc.communicate()
             if fetch_proc.returncode != 0:
-                result["error"] = (
-                    f"Git fetch failed: {fetch_out.decode().strip()[:200]}"
-                )
+                result["error"] = f"Git fetch failed: {fetch_out.decode().strip()[:200]}"
                 _update_state["available"] = result
                 return result
 
@@ -5322,9 +5257,7 @@ async def api_boot_error_delete() -> dict[str, Any]:
 
 
 @app.get("/api/system/images", dependencies=[Depends(verify_auth)])
-async def api_system_images() -> (
-    dict[str, Any]
-):  # pylint: disable=too-many-statements
+async def api_system_images() -> dict[str, Any]:  # pylint: disable=too-many-statements
     """Unified list of FITEBOX images: local + Docker Hub, merged."""
 
     # Get running image tag
@@ -5339,17 +5272,14 @@ async def api_system_images() -> (
     )
     inspect_out, _ = await inspect_proc.communicate()
     running_image = inspect_out.decode().strip()
-    running_tag = (
-        running_image.split(":")[-1] if ":" in running_image else "latest"
-    )
+    running_tag = running_image.split(":")[-1] if ":" in running_image else "latest"
 
     # List local images — include digest to resolve 'latest' alias
     proc = await asyncio.create_subprocess_exec(
         "docker",
         "images",
         "--format",
-        "{{.Repository}}:{{.Tag}}|{{.ID}}|"
-        "{{.Size}}|{{.Digest}}|{{.CreatedAt}}",
+        "{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}|{{.Digest}}|{{.CreatedAt}}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -5387,9 +5317,7 @@ async def api_system_images() -> (
     # Fetch ALL hub tags (stable + pre-release, excluding 'latest' alias)
     hub_all: list[str] = []
     hub_stable_set: set[str] = set()
-    hub_meta: dict[str, DockerRemoteImage] = (
-        {}
-    )  # tag -> {digest, pushed_at, size}
+    hub_meta: dict[str, DockerRemoteImage] = {}  # tag -> {digest, pushed_at, size}
     try:
         hub_url = (
             "https://hub.docker.com/v2/repositories/"
@@ -5444,9 +5372,7 @@ async def api_system_images() -> (
         info = local_map.get(tag)
         is_latest = tag == latest_points_to
         is_stable = tag in hub_stable_set
-        is_deletable = (
-            info is not None and tag != running_tag and not is_latest
-        )
+        is_deletable = info is not None and tag != running_tag and not is_latest
         hub_info: DockerRemoteImage | None = hub_meta.get(tag)
         images.append(
             {
@@ -5456,19 +5382,13 @@ async def api_system_images() -> (
                 "is_latest": is_latest,
                 "is_stable": is_stable,
                 "deletable": is_deletable,
-                "size": (
-                    info["size"]
-                    if info
-                    else (hub_info["size"] if hub_info else None)
-                ),
+                "size": (info["size"] if info else (hub_info["size"] if hub_info else None)),
                 "hub_size": (
                     hub_info["size"] if hub_info else None
                 ),  # compressed size from Docker Hub
                 "image_id": info["image_id"] if info else None,
                 "created_at": (
-                    info["created_at"]
-                    if info
-                    else (hub_info["pushed_at"] if hub_info else None)
+                    info["created_at"] if info else (hub_info["pushed_at"] if hub_info else None)
                 ),
                 "digest": (
                     info["digest"].replace("sha256:", "")[:12]
@@ -5556,12 +5476,8 @@ async def api_system_images_pull(  # pylint: disable=too-many-statements
 
                 if layer_status:
                     done = sum(1 for s in layer_status.values() if s == "done")
-                    extracting = sum(
-                        1 for s in layer_status.values() if s == "extracting"
-                    )
-                    downloading = sum(
-                        1 for s in layer_status.values() if s == "downloading"
-                    )
+                    extracting = sum(1 for s in layer_status.values() if s == "extracting")
+                    downloading = sum(1 for s in layer_status.values() if s == "downloading")
                     total = len(layer_status)
                     # Weight: done=100%, extracting=75%, downloading=40%
                     weighted = done * 100 + extracting * 75 + downloading * 40
@@ -6066,9 +5982,7 @@ async def _restart_via_sidecar(
         stderr=asyncio.subprocess.DEVNULL,
     )
     inspect_out, _ = await inspect_proc.communicate()
-    running_image = (
-        inspect_out.decode().strip() or "docker.io/br0th3r/fitebox:latest"
-    )
+    running_image = inspect_out.decode().strip() or "docker.io/br0th3r/fitebox:latest"
 
     await asyncio.create_subprocess_exec(
         "docker",
@@ -6090,8 +6004,7 @@ async def _restart_via_sidecar(
         f"up -d --force-recreate --no-deps recorder >> {log_file} 2>&1",
     )
     logger.info(
-        f"Sidecar updater launched "
-        f"(host_dir={host_dir}, project={project})",
+        f"Sidecar updater launched " f"(host_dir={host_dir}, project={project})",
     )
 
 
@@ -6182,9 +6095,7 @@ async def _update_official() -> None:  # pylint: disable=too-many-statements
     )
     cur_out, _ = await cur_proc.communicate()
     current_image_tag = cur_out.decode().strip()
-    current_tag = (
-        current_image_tag.split(":")[-1] if ":" in current_image_tag else ""
-    )
+    current_tag = current_image_tag.split(":")[-1] if ":" in current_image_tag else ""
     is_current_stable = bool(current_tag) and not re.search(
         r"-(rc|alpha|beta|dev)\d*$",
         current_tag,
@@ -6277,9 +6188,7 @@ async def _update_official() -> None:  # pylint: disable=too-many-statements
     else:
         is_new_stable = False
     old_tag_to_cleanup = (
-        current_image_tag
-        if is_current_stable and is_new_stable and current_image_tag
-        else None
+        current_image_tag if is_current_stable and is_new_stable and current_image_tag else None
     )
     await _restart_via_sidecar(old_tag_to_cleanup=old_tag_to_cleanup)
 

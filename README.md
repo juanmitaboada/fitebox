@@ -207,6 +207,10 @@ sudo apt update && sudo apt upgrade -y
 
 ### 5.2 Enable I2C (for the OLED display)
 
+> ✅ `setup.sh` now enables I2C automatically (`raspi-config nonint do_i2c 0`),
+> so on a normal install you can skip this step. Do it by hand only if you need
+> the OLED working **before** running `setup.sh`.
+
 ```bash
 sudo raspi-config
 # → Interface Options → I2C → Enable
@@ -249,17 +253,32 @@ sudo chown -R 1000:1000 /recordings
 sudo apt-get install git
 git clone https://github.com/juanmitaboada/fitebox.git
 cd fitebox
-sudo ./bin/setup.sh
+make setup          # or: sudo ./bin/setup.sh
 ```
 
-**A reboot is required** after setup ([what setup.sh does](#37-what-setupsh-does)).
+> ⚠️ **`make setup` is mandatory before your first `make up`.** Besides installing
+> dependencies and configuring the Raspberry Pi, it **generates the self-signed TLS
+> certificate** (`certs/fitebox.crt` / `certs/fitebox.key`) that the nginx proxy
+> mounts. `make up` does **not** create it. If you skip setup and run `make up`
+> directly, the `fitebox_proxy` container crash-loops with:
+>
+> ```
+> nginx: [emerg] cannot load certificate "/etc/nginx/certs/fitebox.crt": ... No such file or directory
+> ```
+>
+> (If you only need the certificate and not a full re-setup, generate it by hand:
+> `mkdir -p certs && openssl req -x509 -nodes -days 3650 -newkey rsa:2048
+> -keyout certs/fitebox.key -out certs/fitebox.crt -subj "/CN=fitebox.local"`.)
+
+**A reboot is required** after setup ([what setup.sh does](#55-what-setupsh-does)).
 
 After reboot, build and run:
 
 ```bash
-docker compose build
-docker compose up -d
+make up_build       # build + start   (or: docker compose build && docker compose up -d)
 ```
+
+From then on, `make up` / `make down` / `make logs` start, stop, and monitor the stack.
 
 To publish your local build to the registries (maintainers only):
 
@@ -275,24 +294,34 @@ The setup script must be run with `sudo`. It detects the real user (via
 `$SUDO_USER`) and performs the following:
 
 1. Installs base tools: `curl`, `wget`, `git`, `build-essential`, `v4l-utils`,
-   `alsa-utils`, `bc`, `jq`.
+   `alsa-utils`, `bc`, `jq`, and `i2c-tools` (for OLED detection with
+   `i2cdetect`).
 2. Installs Docker and the Compose plugin, adds your user to the `docker` group.
 3. Disables PulseAudio and PipeWire system-wide (masks services, disables
    autospawn) so they do not block ALSA access.
 4. Tunes USB buffers (`usbfs_memory_mb=1000`), kernel parameters
    (`vm.swappiness=10`, dirty ratios, scheduler), and file limits (65536).
-5. Enables cgroups for Docker memory management in the boot command line.
-6. On Raspberry Pi 5, enables **PCIe Gen 3** for faster SSD throughput and
-   sets boot to console login required (disable autologin).
-7. Installs the FITEBOX Plymouth boot splash theme (if `plymouth/` directory
+5. Enables the **I2C** interface (required for the SSD1306 OLED at `0x3c`).
+6. Configures the kernel command line (`cmdline.txt`): cgroups for Docker
+   memory management, forced **HDMI output at 1080p60**, and a clean appliance
+   display (no kernel logo, no blinking console cursor).
+7. On Raspberry Pi 5: enables **PCIe Gen 3** for faster SSD throughput, forces
+   the **4K page-size kernel** (`kernel=kernel8.img`) for software
+   compatibility, and sets boot to console login required (disables autologin).
+8. Installs the FITEBOX Plymouth boot splash theme (if `plymouth/` directory
    exists).
-8. Configures passwordless sudo for `reboot`, `shutdown`, and Plymouth
+9. Configures passwordless sudo for `reboot`, `shutdown`, and Plymouth
    messages.
-9. Creates the directory structure (`recordings/`, `log/`, `run/`) with
-   correct ownership.
-10. Generates self-signed TLS certificates for HTTPS.
-11. Creates the `.env` file with your UID/GID so Docker containers create
+10. Creates the directory structure (`recordings/`, `log/`, `run/`) with
+    correct ownership.
+11. Generates self-signed TLS certificates for HTTPS.
+12. Creates the `.env` file with your UID/GID so Docker containers create
     files owned by your user (not root).
+
+All boot-file changes are **idempotent** — each parameter is added only if it is
+missing, so the script is safe to re-run. See
+[5.6 Boot configuration](#56-boot-configuration-what-each-parameter-does-and-why)
+for what every parameter does and why.
 
 ### Container details
 
@@ -309,6 +338,38 @@ Persistent data is stored in Docker volumes mapped to:
 | `/fitebox/config` | Authentication master key |
 | `/fitebox/run` | Runtime state (sockets, PIDs, health) |
 | `/fitebox/log` | Service logs |
+
+### 5.6 Boot configuration: what each parameter does, and why
+
+`setup.sh` manages two firmware files on the boot partition. It never rewrites
+them wholesale and **never touches `root=` / `PARTUUID`** (that value is unique
+to each SD card / SSD). Every parameter below is added **idempotently** — only
+if it is missing — so re-running the script never duplicates anything.
+
+**`/boot/firmware/config.txt`**
+
+| Parameter | What it does | Why FITEBOX needs it |
+|---|---|---|
+| `dtparam=i2c_arm=on` | Enables the I2C bus on the GPIO header. | The SSD1306 OLED talks over I2C (address `0x3c`). Without it the `oled_controller` service cannot find the screen and dies on boot. |
+| `dtparam=pciex1_gen=3` | Forces the PCIe connector to Gen 3 speed (RPi 5). | Full NVMe SSD throughput, so recording and disk writes never become the bottleneck. |
+| `kernel=kernel8.img` | Loads the generic ARM64 kernel with a **4K** memory page size instead of the Pi 5 default `kernel_2712.img`, which uses **16K** pages. | The 16K-page kernel buys ~5% performance but breaks software that assumes 4K pages (segmentation faults, "unsupported page size", or programs refusing to start). FITEBOX's FFmpeg / V4L2 capture / Python stack is built and tested on 4K pages, so the tiny performance trade-off is well worth the stability. Verify after reboot with `getconf PAGESIZE` → `4096` = correct, `16384` = wrong kernel. |
+
+**`/boot/firmware/cmdline.txt`** — a **single line**; parameters are
+space-separated and appended to the end:
+
+| Parameter | What it does | Why FITEBOX needs it |
+|---|---|---|
+| `cgroup_enable=cpuset cgroup_enable=memory cgroup_memory=1` | Enables memory/cpuset cgroups in the kernel. | Docker needs them to enforce per-container memory limits. |
+| `video=HDMI-A-1:1920x1080M@60` | Pins the HDMI output to 1080p @ 60 Hz. | The display daemon owns the HDMI port for status screens; without a fixed mode the resolution is auto-negotiated and may come up wrong or blank on some monitors. |
+| `logo.nologo` | Hides the Raspberry Pi kernel logos shown during boot. | A clean, appliance-like boot — no Linux branding on the projector. |
+| `vt.global_cursor_default=0` | Disables the blinking text cursor on the console. | Stops the lone blinking cursor from showing through on the HDMI output between the boot splash and the application. |
+
+> ℹ️ **Why not just edit the files by hand?** Because each box may have a
+> different `PARTUUID`, a different monitor, and may be re-imaged often.
+> `setup.sh` adds only the keys that are missing and leaves everything else —
+> most importantly `root=` — untouched, so it is safe to run on any fresh image.
+> A **reboot** is required for kernel-page-size, PCIe and `cmdline.txt` changes
+> to take effect.
 
 ### 5.8 Diagnostics
 
