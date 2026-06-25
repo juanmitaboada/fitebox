@@ -4,6 +4,18 @@ All notable changes to the FITEBOX project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.5] - 2026-06-25
+
+### Fixed
+- Bumper upload no longer crashes with "list index out of range" when the
+  uploaded video has no audio stream (empty ffprobe stream list).
+
+### Changed
+- Audio-less bumpers now get a silent stereo 48kHz track synthesized during
+  conversion, so they can be spliced with the recording's audio when streaming.
+- Audio-only files (no video stream) are now rejected early with a clear
+  message instead of failing later with a cryptic ffmpeg error.
+
 ## [1.4.4] - 2026-06-23
 
 ### Added

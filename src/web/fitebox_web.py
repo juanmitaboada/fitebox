@@ -2847,12 +2847,14 @@ async def api_bumper_upload(  # pylint: disable=too-many-return-statements,too-m
             check=False,
         )
 
-        v_info = (
-            json.loads(probe_r.stdout).get("streams", [{}])[0] if probe_r.returncode == 0 else {}
+        _v_streams = (
+            json.loads(probe_r.stdout).get("streams", []) if probe_r.returncode == 0 else []
         )
-        a_info = (
-            json.loads(probe_a.stdout).get("streams", [{}])[0] if probe_a.returncode == 0 else {}
+        _a_streams = (
+            json.loads(probe_a.stdout).get("streams", []) if probe_a.returncode == 0 else []
         )
+        v_info = _v_streams[0] if _v_streams else {}
+        a_info = _a_streams[0] if _a_streams else {}
 
         src_w = int(v_info.get("width", 0))
         src_h = int(v_info.get("height", 0))
@@ -2860,6 +2862,17 @@ async def api_bumper_upload(  # pylint: disable=too-many-return-statements,too-m
         src_a_codec = a_info.get("codec_name", "")
         src_rate = int(a_info.get("sample_rate", 0))
         src_channels = int(a_info.get("channels", 0))
+
+        # A bumper without a video stream is unusable (and we can't
+        # synthesize meaningful video). Reject early with a clear msg.
+        if not src_codec or src_w == 0 or src_h == 0:
+            return {
+                "status": "error",
+                "message": (
+                    "File has no usable video stream. A bumper must be "
+                    "a video file (audio-only files are not supported)."
+                ),
+            }
 
         # Parse frame rate (e.g. "30/1" or "30000/1001")
         fps_str = v_info.get("r_frame_rate", "0/1")
@@ -2981,45 +2994,61 @@ async def api_bumper_upload(  # pylint: disable=too-many-return-statements,too-m
         elif not tmp_path.exists() and pending.exists():
             tmp_path = pending
 
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
+        has_audio = bool(src_a_codec)
+
+        ff_cmd = ["ffmpeg", "-y", "-i", str(tmp_path)]
+        if not has_audio:
+            # No audio in source: synthesize a silent stereo 48kHz track
+            # so the bumper can be spliced with the recording's audio
+            # during streaming (FLV muxer needs matching A/V streams).
+            ff_cmd += [
+                "-f",
+                "lavfi",
                 "-i",
-                str(tmp_path),
-                "-vf",
-                f"scale={target_w}:{target_h}:"
-                "force_original_aspect_ratio=decrease,"
-                f"pad={target_w}:{target_h}:"
-                f"(ow-iw)/2:(oh-ih)/2,setsar=1,fps={target_fps}",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-crf",
-                "22",
-                "-profile:v",
-                "main",
-                "-level",
-                "4.1",
-                "-pix_fmt",
-                "yuv420p",
-                "-g",
-                "50",
-                "-keyint_min",
-                "25",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                "-ar",
-                "48000",
-                "-ac",
-                "2",
-                "-movflags",
-                "+faststart",
-                str(dest),
-            ],
+                "anullsrc=channel_layout=stereo:sample_rate=48000",
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+            ]
+        ff_cmd += [
+            "-vf",
+            f"scale={target_w}:{target_h}:"
+            "force_original_aspect_ratio=decrease,"
+            f"pad={target_w}:{target_h}:"
+            f"(ow-iw)/2:(oh-ih)/2,setsar=1,fps={target_fps}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "22",
+            "-profile:v",
+            "main",
+            "-level",
+            "4.1",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            "50",
+            "-keyint_min",
+            "25",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+        ]
+        if not has_audio:
+            # anullsrc is infinite; stop output at end of video.
+            ff_cmd += ["-shortest"]
+        ff_cmd += ["-movflags", "+faststart", str(dest)]
+
+        result = subprocess.run(
+            ff_cmd,
             capture_output=True,
             text=True,
             timeout=300,
@@ -3037,7 +3066,11 @@ async def api_bumper_upload(  # pylint: disable=too-many-return-statements,too-m
         await asyncio.to_thread(_extract_bumper_thumbnail, dest)
         return {
             "status": "ok",
-            "message": f"{which.title()} bumper converted and updated",
+            "message": (
+                f"{which.title()} bumper converted"
+                f"{'' if has_audio else ' (silent audio added)'}"
+                " and updated"
+            ),
             "converted": True,
             "source": f"{src_w}x{src_h} → {target_w}x{target_h}",
         }
